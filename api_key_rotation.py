@@ -16,24 +16,40 @@ class SecretManager:
         self.projectID = projectID
         self.GCP = GCP(self.projectID)
         self.credManager = credManager
-    def list_secrets(self):
-        secrets = self.GCP.read_exec("secrets list", "json")
-        return secrets
+    def list_secrets(self, limit=None):
+        if not limit:
+            secretsList = self.GCP.exec("secrets list --sort-by=~createTime")
+        else:
+            secretsList = self.GCP.exec("secrets list --limit={} --sort-by=~createTime".format(limit))
+        return secretsList    
     def describe_secret(self, secretName):
-        secret = self.GCP.read_exec("secrets describe {}".format(secretName), "json")
-        return secret
-    def list_versions(self, secretName):
-        versions = self.GCP.read_exec("secrets versions list {}".format(secretName, "json"))
+        secretDetails = self.GCP.exec("secrets describe {}".format(secretName))
+        return secretDetails
+    def list_versions(self, secretName, limit=None):
+        if not limit:
+            versions = self.GCP.exec("secrets versions list {} --sort-by=~createTime".format(secretName))
+        else:
+            versions = self.GCP.exec("secrets versions list {} --limit={} --sort-by=~createTime".format(secretName, limit), "value(name)")
         return versions
+    def list_latest_version(self, secretName):
+        latestVersion = self.list_versions(secretName, 1)
+        return latestVersion
+    def list_annotations(self, secretName):
+        secretDetails = self.describe_secret(secretName)
+        annotations = secretDetails['annotations']
+        return annotations
+    def list_latest_annotation(self, secretName):
+        latestVersion = self.list_latest_version(secretName)
+        annotations = self.list_annotations(secretName)
+        latestAnnotation = annotations["id_{}".format(latestVersion)]
+        return latestAnnotation
     def disable_version(self, version, secretName):
-        self.GCP.write_exec("secrets versions disable {} --secret={}".format(version, secretName))
-    def add_version(self, keyName, secretValue, secretName):
-        self.GCP.custom_exec("echo -n {} | gcloud secrets versions add {} --data-file=- --project={}".format(secretValue, secretName, self.projectID))
-        version = self.GCP.read_exec("secrets versions list {} --limit=1 --sort-by=~createTime".format(secretName), "value(name)")
-        annotation = "version_{}={}".format(version, keyName.replace(" ","_"))
-        self.GCP.write_exec("secrets update {} --update-annotations={}".format(secretName, annotation))
-        # should i save key name or ID in annotation? leaning towards ID
-
+        self.GCP.exec("secrets versions disable {} --secret={}".format(version, secretName))
+    def add_version(self, keyID, secretValue, secretName):
+        response = self.GCP.custom_exec("echo -n {} | gcloud secrets versions add {} --data-file=- --project={} --format=json".format(secretValue, secretName, self.projectID))
+        version = response["name"].rsplit("versions/", 1)[-1]
+        annotation = "version_{}={}".format(version, keyID)
+        self.GCP.exec("secrets update {} --update-annotations={}".format(secretName, annotation))
 
 class KeyManager:
     def __init__(self, projectID):

@@ -98,21 +98,23 @@ class KeyManager:
         return newKeyId
     
 def checkSecrets(sMan, expiryTime):
-    keyIDs = []
+    keyIds = []
     secrets = sMan.list_secrets()
     for secret in secrets:
         latestVersion = sMan.latest_version(secret)
         createDate = datetime.strptime(latestVersion['createTime'], '%Y-%m-%dT%H:%M:%S.%fZ')
         if datetime.now(datetime.timezone.utc) - createDate > timedelta(days=expiryTime):
             latestAnnotation = sMan.latest_annotation(secret)
-            keyIDs.append(next(iter(latestAnnotation.values())))
-    return keyIDs
+            keyIds.append(next(iter(latestAnnotation.values())))
+    return keyIds
+
+def rotateKeys(kMan, oldKeyIds):
+    newKeyIds = []
+    for oldKeyId in oldKeyIds:
+        newKeyIds.append(kMan.rotate_key(oldKeyId))
+    return newKeyIds
 
 """
-def rotateKeys(kMan, keyIDs):
-    for keyID in keyIDs:
-        kMan.rotate_key(keyID)
-
 def main(projectID):
     kMan = KeyManager(projectID)
     sMan = SecretManager(projectID, kMan)

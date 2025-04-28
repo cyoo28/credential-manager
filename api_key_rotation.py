@@ -75,8 +75,6 @@ class KeyManager:
         else:
             keys = self.GCP.exec("services api-keys list --limit={} --sort-by=~createTime".format(limit))
         return keys
-    def delete_key(self, keyId):
-        self.GCP.exec("services api-keys delete {}".format(keyId))
     def create_key(self, keyName, apiTargets, allowedIps):
         ipString = ""
         for apiTarget in apiTargets:
@@ -84,9 +82,14 @@ class KeyManager:
         response = self.GCP.exec("services api-keys create --display-name='{}' --allowed-ips='{}' {}".format(keyName, allowedIps, ipString))
         keyId = response['response']['uid']
         return keyId
+    def delete_key(self, keyId):
+        self.GCP.exec("services api-keys delete {}".format(keyId))
+    def get_key_string(self, keyId):
+        keyString = self.GCP.exec("services api-keys get-key-string {}".format(keyId))['keyString']
+        return keyString
     def get_key_config(self, keyId):
-        self.keyConfig = self.GCP.exec("services api-keys describe {}".format(keyId))
-        return self.keyConfig
+        keyConfig = self.GCP.exec("services api-keys describe {}".format(keyId))
+        return keyConfig
     def rotate_key(self, oldKeyId):
         keyInfo = self.get_key_config(oldKeyId)
         name = keyInfo['displayName']
@@ -95,7 +98,8 @@ class KeyManager:
         apiTargets = [key+"="+value for target in targets for key, value in target.items()]
         allowedIps = ",".join(ips)
         newKeyId = self.create_key(name, apiTargets, allowedIps)
-        return newKeyId
+        newKeyString = self.get_key_string(newKeyId)
+        return newKeyId, newKeyString
     
 def checkSecrets(sMan, expiryTime):
     keyIds = []
@@ -111,7 +115,8 @@ def checkSecrets(sMan, expiryTime):
 def rotateKeys(kMan, oldKeyIds):
     newKeyIds = []
     for oldKeyId in oldKeyIds:
-        newKeyIds.append(kMan.rotate_key(oldKeyId))
+        newKeyId, newKeyString = kMan.rotate_key(oldKeyId)
+        newKeyIds = {newKeyId: newKeyString}
     return newKeyIds
 
 """

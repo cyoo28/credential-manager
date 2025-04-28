@@ -32,10 +32,10 @@ class SecretManager:
         return secretDetails
     def list_versions(self, secretName, limit=None):
         if not limit:
-            versions = self.GCP.exec("secrets versions list {} --sort-by=~createTime".format(secretName), "json(name)")[0]
+            versions = self.GCP.exec("secrets versions list {} --sort-by=~createTime".format(secretName), "json(name)")
         else:
-            versions = self.GCP.exec("secrets versions list {} --limit={} --sort-by=~createTime".format(secretName, limit), "json(name)")[0]
-        return [value.split("/")[-1] for value in versions.values()]
+            versions = self.GCP.exec("secrets versions list {} --limit={} --sort-by=~createTime".format(secretName, limit), "json(name)")
+        return [version['name'].split("/")[-1] for version in versions]
     def list_latest_version(self, secretName):
         latestVersion = self.list_versions(secretName, 1)[0]
         return latestVersion

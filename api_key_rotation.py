@@ -39,14 +39,14 @@ class SecretManager:
         return versions
     def list_annotations(self, secretName):
         secretDetails = self.describe_secret(secretName)
-        annotations = secretDetails['annotations']
+        annotations = secretDetails.get('annotations')
         return annotations
     def latest_version(self, secretName):
         latestVersion = self.list_versions(secretName, 1)[0]
         return latestVersion
     def latest_annotation(self, secretName):
         latestVersion = self.latest_version(secretName)
-        latestVersionNum = latestVersion['name'].split("/")[-1]
+        latestVersionNum = latestVersion.get('name').split("/")[-1]
         annotations = self.list_annotations(secretName)
         latestKey = "version_{}".format(latestVersionNum)
         latestValue = annotations[latestKey]
@@ -62,7 +62,7 @@ class SecretManager:
         self.GCP.exec("secrets update {} --update-annotations='{}'".format(secretName, ",".join([key+"="+value for key, value in annotations.items()])))
     def add_version(self, keyId, secretValue, secretName):
         versionDetails = self.GCP.custom_exec("echo -n {} | gcloud secrets versions add {} --data-file=- --project={} --format=json".format(secretValue, secretName, self.projectID))
-        version = versionDetails["name"].split("/")[-1]
+        version = versionDetails.get('name').split("/")[-1]
         self.add_annotation(keyId, version, secretName)
 
 class KeyManager:
@@ -70,43 +70,51 @@ class KeyManager:
         self.projectId = projectId
         self.GCP = GCP(self.projectId)
     def list_keys(self, limit=None):
-        if not limit:
-            keys = self.GCP.exec("services api-keys list --sort-by=~createTime")
-        else:
-            keys = self.GCP.exec("services api-keys list --limit={} --sort-by=~createTime".format(limit))
+        cmd = "services api-keys list --sort-by=~createTime"
+        if limit:
+            cmd += f"--limit={limit}"
+        keys = self.GCP.exec(cmd)
         return keys
-    def create_key(self, keyName, apiTargets, allowedIps):
-        ipString = ""
-        for apiTarget in apiTargets:
-            ipString = ipString + "--api-target='{}' ".format(apiTarget)
-        response = self.GCP.exec("services api-keys create --display-name='{}' --allowed-ips='{}' {}".format(keyName, allowedIps, ipString))
-        keyId = response['response']['uid']
-        return keyId
+    def create_key(self, keyName, apiTargets=None, allowedIps=None):
+        cmd = f"services api-keys create --display-name='{keyName}' "
+        flags = []
+        if apiTargets:
+            flags += [f"--api-target='{target}'" for target in apiTargets]
+        if allowedIps:
+            flags.append(f"--allowed-ips='{allowedIps}'")
+        cmd += ' '.join(flags)
+        print(cmd)
+        keyId = self.GCP.exec(cmd).get('response').get('uid')
+        return keyId    
     def delete_key(self, keyId):
-        self.GCP.exec("services api-keys delete {}".format(keyId))
+        self.GCP.exec(f"services api-keys delete {keyId}")
     def get_key_string(self, keyId):
-        keyString = self.GCP.exec("services api-keys get-key-string {}".format(keyId))['keyString']
+        keyString = self.GCP.exec(f"services api-keys get-key-string {keyId}").get('keyString')
         return keyString
     def get_key_config(self, keyId):
-        keyConfig = self.GCP.exec("services api-keys describe {}".format(keyId))
+        keyConfig = self.GCP.exec(f"services api-keys describe {keyId}")
         return keyConfig
     def rotate_key(self, oldKeyId):
         keyInfo = self.get_key_config(oldKeyId)
-        name = keyInfo['displayName']
-        targets = keyInfo['restrictions']['apiTargets']
-        ips = keyInfo['restrictions']['serverKeyRestrictions']['allowedIps']
-        apiTargets = [key+"="+value for target in targets for key, value in target.items()]
-        allowedIps = ",".join(ips)
+        name = keyInfo.get('displayName')
+        restrictions = keyInfo.get('restrictions', {})
+        targets = restrictions.get('apiTargets', None)
+        ips = restrictions.get('serverKeyRestrictions', {}).get('allowedIps', None)
+        apiTargets = [f"{key}={value}" for target in targets for key, value in target.items()] if targets else None
+        allowedIps = ",".join(ips) if ips else None
         newKeyId = self.create_key(name, apiTargets, allowedIps)
         newKeyString = self.get_key_string(newKeyId)
         return newKeyId, newKeyString
-    
+
+
+
+
 def checkSecrets(sMan, expiryTime):
     keyIds = []
     secrets = sMan.list_secrets()
     for secret in secrets:
         latestVersion = sMan.latest_version(secret)
-        createDate = datetime.strptime(latestVersion['createTime'], '%Y-%m-%dT%H:%M:%S.%fZ')
+        createDate = datetime.strptime(latestVersion.get('createTime'), '%Y-%m-%dT%H:%M:%S.%fZ')
         if datetime.now(datetime.timezone.utc) - createDate > timedelta(days=expiryTime):
             latestAnnotation = sMan.latest_annotation(secret)
             keyIds.append(next(iter(latestAnnotation.values())))

@@ -113,11 +113,14 @@ def checkSecrets(sMan, expiryTime):
     return keyIds
 
 def rotateKeys(kMan, oldKeyIds):
-    newKeyIds = []
+    newKeys = []
     for oldKeyId in oldKeyIds:
         newKeyId, newKeyString = kMan.rotate_key(oldKeyId)
-        newKeyIds = {newKeyId: newKeyString}
-    return newKeyIds
+        newKeys.append({newKeyId: newKeyString})
+    return newKeys
+
+def updateSecrets(sMan, keys):
+    return 0
 
 """
 def main(projectID):

@@ -114,10 +114,8 @@ class KeyManager:
         allowedIps = ",".join(ips) if ips else None
         newKeyId = self.create_key(name, apiTargets, allowedIps)
         newKeyString = self.get_key_string(newKeyId)
+        self.delete_key(oldKeyId)
         return newKeyId, newKeyString
-
-
-
 
 def checkSecrets(sMan, expiryTime):
     keyIds = []

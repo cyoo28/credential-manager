@@ -6,16 +6,19 @@ class GCP:
     def __init__(self, projectId):
         self.projectId = projectId
     def exec(self, command, format="json"):
-        cmd = "gcloud {} --format='{}' --project={}".format(command, format, self.projectId)
+        cmd = f"gcloud {command} --format='{format}' --project={self.projectId}"
         print(cmd)
-        response = os.popen(cmd)
         try:
-            return json.loads(response.read())
+            response = os.popen(cmd).read()
+            return json.loads(response)
         except:
             return None
     def custom_exec(self, command):
-        response = os.popen(command)
-        return json.loads(response.read())
+        try:
+            response = os.popen(command).read()
+            return json.loads(response)
+        except:
+            return None
     
 class SecretManager:
     def __init__(self, projectId, credManager):

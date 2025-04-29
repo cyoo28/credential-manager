@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 class GCP:
     def __init__(self, projectId):
@@ -121,10 +121,11 @@ def checkSecrets(sMan, expiryTime):
     keyIds = []
     secrets = sMan.list_secrets()
     for secret in secrets:
-        latestVersion = sMan.latest_version(secret)
-        createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ")
-        if datetime.now(datetime.timezone.utc) - createDate > timedelta(days=expiryTime):
-            latestAnnotation = sMan.latest_annotation(secret)
+        name = secret.get("name").split("/")[-1]
+        latestVersion = sMan.latest_version(name)
+        createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime):
+            latestAnnotation = sMan.latest_annotation(name)
             keyIds.append(next(iter(latestAnnotation.values())))
     return keyIds
 

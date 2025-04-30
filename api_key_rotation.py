@@ -104,7 +104,7 @@ class SecretManager:
         newVersionDetails = self.GCP.custom_exec(cmd)
         newVersionNum = newVersionDetails.get("name").split("/")[-1]
         self.add_annotation(secretName, newVersionNum, credId)
-        
+
 class KeyManager:
     def __init__(self, projectId, debug=False):
         self.projectId = projectId
@@ -131,7 +131,7 @@ class KeyManager:
         cmd += " ".join(flags)
         keyId = self.GCP.exec(cmd).get("response").get("uid")
         self.debug_print(keyId)
-        return keyId    
+        return keyId
     def delete_key(self, keyId):
         self.GCP.exec(f"services api-keys delete {keyId}")
     def get_key_string(self, keyId):
@@ -144,7 +144,6 @@ class KeyManager:
         return keyConfig
     def rotate_key(self, oldKeyId):
         keyInfo = self.get_key_config(oldKeyId)
-        self.debug_print(keyInfo)
         name = keyInfo.get("displayName")
         restrictions = keyInfo.get("restrictions", {})
         targets = restrictions.get("apiTargets", None)
@@ -154,9 +153,7 @@ class KeyManager:
         allowedIps = ",".join(ips) if ips else None
         self.debug_print(allowedIps)
         newKeyId = self.create_key(name, apiTargets, allowedIps)
-        self.debug_print(newKeyId)
         newKeyString = self.get_key_string(newKeyId)
-        self.debug_print(newKeyString)
         self.delete_key(oldKeyId)
         return newKeyId, newKeyString
 

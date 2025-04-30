@@ -163,18 +163,16 @@ class KeyManager:
         self.delete_key(oldKeyId)
         return newKeyId, newKeyString
 
-def checkSecrets(sMan, expiryTime):
-    oldCreds = []
-    secrets = sMan.list_secrets()
-    for secret in secrets:
-        name = secret.get("name").split("/")[-1]
-        latestVersion = sMan.latest_version(name)
-        createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime):
-            latestAnnotation = sMan.latest_annotation(name)
-            oldCreds.append({name: latestAnnotation})
-    return oldCreds
-
+def checkSecret(sMan, secret, expiryTime):
+    name = secret.get("name").split("/")[-1]
+    latestVersion = sMan.latest_version(name)
+    createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime):
+        latestAnnotation = sMan.latest_annotation(name)
+        return name, latestAnnotation
+    else:
+        return None
+    
 def rotateKey(kMan, oldKeyId):
     newKeyId, newKeyString = kMan.rotate_key(oldKeyId)
     newKey = ({newKeyId: newKeyString})
@@ -184,11 +182,15 @@ def updateSecret(sMan, secretName, key):
     for keyId, keyString in key.items():
         sMan.add_version(secretName, keyId, keyString)
 
-"""
-def main(projectID):
-    kMan = KeyManager(projectID)
-    sMan = SecretManager(projectID, kMan)
+def main(projectID, expiryTime, debug=False):
+    kMan = KeyManager(projectID, debug)
+    sMan = SecretManager(projectID, kMan, debug)
+    secrets = sMan.list_secrets()
+    for secret in secrets:
+        secretName, latestAnnotation = checkSecret(sMan, secret, expiryTime)
+        for secretVersion, keyId in latestAnnotation.items():
+            newKey = rotateKey(kMan, keyId)
+            updateSecret(sMan, secretName, newKey)
 
 if __name__ == "__main__":
-    main(projectID)
-#"""
+    main(projectID, debug)

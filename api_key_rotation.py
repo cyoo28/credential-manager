@@ -34,28 +34,32 @@ class SecretManager:
     def describe_secret(self, secretName):
         secretDetails = self.GCP.exec(f"secrets describe {secretName}")
         return secretDetails
-    def list_versions(self, secretName, limit=None):
+    def list_versions(self, secretName, limit=None, enabled=False):
         cmd = f"secrets versions list {secretName} --sort-by=~createTime"
         if limit:
             cmd += f" --limit={limit}"
+        if enabled:
+            cmd += f" --filter='state:ENABLED'"
         versions = self.GCP.exec(cmd)
         return versions
     def list_annotations(self, secretName):
         secretDetails = self.describe_secret(secretName)
-        annotations = secretDetails.get("annotations", {})
-        return annotations
+        annotations = secretDetails.get("annotations")
+        return annotations if annotations else None
     def latest_version(self, secretName):
-        versions = self.list_versions(secretName, limit=1)
+        versions = self.list_versions(secretName, limit=1, enabled=True)
         return versions[0] if versions else None
     def latest_annotation(self, secretName):
         latestVersion = self.latest_version(secretName)
         if not latestVersion:
-            return {}
+            return None
         latestNum = latestVersion.get("name").split("/")[-1]
         annotations = self.list_annotations(secretName)
+        if not annotations:
+            return None
         latestKey = f"version_{latestNum}"
         latestValue = annotations.get(latestKey, None)
-        latestAnnotation = {latestKey: latestValue} if latestValue else {}
+        latestAnnotation = {latestKey: latestValue} if latestValue else {latestKey: "None"}
         return latestAnnotation
     def enable_version(self, secretName, version):
         self.GCP.exec(f"secrets versions enable {version} --secret={secretName}")
@@ -67,13 +71,16 @@ class SecretManager:
         annotationStr = ",".join([key+"="+value for key, value in annotations.items()])
         self.GCP.exec(f"secrets update {secretName} --update-annotations='{annotationStr}'")
     def add_version(self, secretName, secretValue, keyId):
+        oldVersionDetails = self.latest_version(secretName)
+        oldVersionNum = oldVersionDetails.get("name").split("/")[-1]
         cmd = (
             f"echo -n {secretValue} | gcloud secrets versions add {secretName} "
             f"--data-file=- --project={self.projectId} --format=json"
         )
-        versionDetails = self.GCP.custom_exec(cmd)
-        version = versionDetails.get("name").split("/")[-1]
-        self.add_annotation(secretName, version, keyId)
+        newVersionDetails = self.GCP.custom_exec(cmd)
+        newVersionNum = newVersionDetails.get("name").split("/")[-1]
+        self.add_annotation(secretName, newVersionNum, keyId)
+        self.disable_version(secretName, oldVersionNum)
 
 class KeyManager:
     def __init__(self, projectId):

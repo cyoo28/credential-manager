@@ -1,6 +1,9 @@
+#!/usr/bin/env python3
+import sys
 import os
 import json
 from datetime import datetime, timezone, timedelta
+import argparse
 
 class Debugger:
     def __init__(self, debug):
@@ -155,57 +158,68 @@ class KeyManager:
         self.delete_key(oldKeyId)
         return newKeyId, newKeyString
 
-def checkSecret(sMan, secret, expiryTime, debugger):
+def checkSecret(sMan, secret, expiryTime):
     name = secret.get("name").split("/")[-1]
-    debugger.print(f"Secret Name: {name}")
+    print(f"Secret Name: {name}")
     latestVersion = sMan.latest_version(name)
     if not latestVersion:
-        debugger.print(f"{name} has no versions")
+        print(f"{name} has no versions")
         return name, {} 
     createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
-    debugger.print(f"Creation Time: {createDate}")
-    debugger.print(f"Current Time {datetime.now(timezone.utc)}")
-    debugger.print(f"Is it older than {expiryTime} day(s)? {datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime)}")
+    print(f"Creation Time: {createDate}")
+    print(f"Current Time {datetime.now(timezone.utc)}")
+    print(f"Is it older than {expiryTime} day(s)? {datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime)}")
     if datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime):
         latestAnnotation = sMan.latest_annotation(name)
         return name, latestAnnotation
     else:
-        debugger.print(f"{name} is not older than {expiryTime} day(s)")
+        print(f"{name} is not older than {expiryTime} day(s)")
         return name, {}
     
-def rotateKey(kMan, oldKeyId, debugger):
-    debugger.print(f"Old Key Id: {oldKeyId}")
+def rotateKey(kMan, oldKeyId):
+    print(f"Old Key Id: {oldKeyId}")
     newKeyId, newKeyString = kMan.rotate_key(oldKeyId)
-    debugger.print(f"New Key Id: {newKeyId}")
-    debugger.print(f"New Key String: {newKeyString}")
+    print(f"New Key Id: {newKeyId}")
+    print(f"New Key String: {newKeyString}")
     newKey = ({newKeyId: newKeyString})
     return newKey
 
-def updateSecret(sMan, secretName, key, debugger):
-    debugger.print(f"Secret Name: {secretName}")
+def updateSecret(sMan, secretName, key):
+    print(f"Secret Name: {secretName}")
     for keyId, keyString in key.items():
-        debugger.print(f"Key Id: {keyId}")
-        debugger.print(f"Key String: {keyString}")
+        print(f"Key Id: {keyId}")
+        print(f"Key String: {keyString}")
         sMan.add_version(secretName, keyId, keyString)
 
-def main(projectID, expiryTime, debug=False):
-    kMan = KeyManager(projectID, debug)
-    sMan = SecretManager(projectID, kMan, debug)
-    debugger = Debugger(True)
+def main(projectId, expiryTime, debug=False):
+    kMan = KeyManager(projectId, debug)
+    sMan = SecretManager(projectId, kMan, debug)
     secrets = sMan.list_secrets()
     if not secrets:
-        debugger.print("There are no secrets in this project")
+        print("There are no secrets in this project")
     for secret in secrets:
-        debugger.print(f"Checking if secret is old...")
-        secretName, latestAnnotation = checkSecret(sMan, secret, expiryTime, debugger)
+        print(f"Checking if secret is old...")
+        secretName, latestAnnotation = checkSecret(sMan, secret, expiryTime)
         if not latestAnnotation:
-            debugger.print(f"This secret does not need to be rotated")
+            print(f"This secret does not need to be rotated")
             continue
         for secretVersion, keyId in latestAnnotation.items():
-            debugger.print(f"Rotating key...")
-            newKey = rotateKey(kMan, keyId, debugger)
-            debugger.print(f"Updating secret...")
-            updateSecret(sMan, secretName, newKey, debugger)
+            print(f"Rotating key...")
+            newKey = rotateKey(kMan, keyId)
+            print(f"Updating secret...")
+            updateSecret(sMan, secretName, newKey)
 
 if __name__ == "__main__":
-    main(projectID, debug)
+    # Create an ArgumentParser object
+    parser = argparse.ArgumentParser(description="Use this script to rotate keys associated with old secrets")
+    # Create arguments
+    parser.add_argument("projectId", type=str, help="Google Cloud Project Id")
+    parser.add_argument("expiryTime", type=int, help="Time in days after which secrets should be rotated")
+    parser.add_argument("--debug", dest="debug", action="store_true", help="Enable debug mode")
+    # Parse the command-line arguments
+    args = parser.parse_args(sys.argv[1:])
+    projectId = args.projectId
+    expiryTime = args.expiryTime
+    debug = args.debug
+
+    main(projectId, expiryTime, debug)

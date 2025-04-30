@@ -23,7 +23,7 @@ class GCP:
             return json.loads(response)
         except:
             return None
-    
+
 class SecretManager:
     def __init__(self, projectId, credManager, debug=False):
         self.projectId = projectId
@@ -51,43 +51,40 @@ class SecretManager:
         if enabled:
             cmd += f" --filter='state:ENABLED'"
         versions = self.GCP.exec(cmd)
+        if not versions:
+            self.debug_print("No versions available (check that there is at least 1 enabled version)")
         self.debug_print(versions)
         return versions
     def list_annotations(self, secretName):
         secretDetails = self.describe_secret(secretName)
-        annotations = secretDetails.get("annotations", None)
+        annotations = secretDetails.get("annotations", {})
+        if not annotations:
+            self.debug_print("No annotations available (check that the secret has annotations)")
         self.debug_print(annotations)
         return annotations
     def latest_version(self, secretName):
         versions = self.list_versions(secretName, limit=1, enabled=True)
-        if versions:
-            self.debug_print(versions[0])
-            return versions[0]
-        else:
-            self.debug_print("No versions available (check that there is at least 1 enabled version)")
-            return None
+        return versions[0] if versions else None
     def latest_annotation(self, secretName):
         latestVersion = self.latest_version(secretName)
-        if not latestVersion:
-            return None
-        latestNum = latestVersion.get("name").split("/")[-1]
         annotations = self.list_annotations(secretName)
-        if not annotations:
-            self.debug_print("No annotations available (check that the secret has annotations)")
-            return None
+        if not latestVersion or not annotations:
+            return {}
+        latestNum = latestVersion.get("name").split("/")[-1]
         latestKey = f"version_{latestNum}"
         self.debug_print(latestKey)
         latestValue = annotations.get(latestKey, None)
-        self.debug_print(latestValue)
-        latestAnnotation = {latestKey: latestValue} if latestValue else {latestKey: "None"}
-        return latestAnnotation
+        if not latestValue:
+            self.debug_print("The latest version has no corresponding annotation")
+        self.debug_print(latestValue)        
+        latestAnnotation = {latestKey: latestValue}
+        return latestAnnotation if latestValue else {}
     def enable_version(self, secretName, version):
         self.GCP.exec(f"secrets versions enable {version} --secret={secretName}")
     def disable_version(self, secretName, version):
         self.GCP.exec(f"secrets versions disable {version} --secret={secretName}")
     def add_annotation(self, secretName, version, credId):
         annotations = self.list_annotations(secretName)
-        self.debug_print(annotations)
         annotations[f"version_{version}"] = credId
         self.debug_print(annotations)
         annotationStr = ",".join([key+"="+value for key, value in annotations.items()])
@@ -95,10 +92,11 @@ class SecretManager:
         self.GCP.exec(f"secrets update {secretName} --update-annotations='{annotationStr}'")
     def add_version(self, secretName, credId, credValue):
         oldVersionDetails = self.latest_version(secretName)
-        if not oldVersionDetails:
-            self.debug_print("No versions available (check that there is at least 1 enabled version)")
-            return None
-        oldVersionNum = oldVersionDetails.get("name").split("/")[-1]
+        if oldVersionDetails:
+            oldVersionNum = oldVersionDetails.get("name").split("/")[-1]
+            self.disable_version(secretName, oldVersionNum)
+        else:
+            self.debug_print("No older versions to disable")
         cmd = (
             f"echo -n {credValue} | gcloud secrets versions add {secretName} "
             f"--data-file=- --project={self.projectId} --format=json"
@@ -106,8 +104,7 @@ class SecretManager:
         newVersionDetails = self.GCP.custom_exec(cmd)
         newVersionNum = newVersionDetails.get("name").split("/")[-1]
         self.add_annotation(secretName, newVersionNum, credId)
-        self.disable_version(secretName, oldVersionNum)
-
+        
 class KeyManager:
     def __init__(self, projectId, debug=False):
         self.projectId = projectId
@@ -186,6 +183,8 @@ def main(projectID, expiryTime, debug=False):
     kMan = KeyManager(projectID, debug)
     sMan = SecretManager(projectID, kMan, debug)
     secrets = sMan.list_secrets()
+    if not secrets and debug:
+        print("There are no secrets in this project")
     for secret in secrets:
         secretName, latestAnnotation = checkSecret(sMan, secret, expiryTime)
         for secretVersion, keyId in latestAnnotation.items():

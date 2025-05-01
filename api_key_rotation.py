@@ -38,7 +38,7 @@ class SecretManager:
         self.credMan = credMan
         self.debugger = Debugger(debug)
         self.test = test
-        self.rotatedSecrets = []
+        self.rotatedSecrets = {}
     def list_secrets(self, limit=None):
         cmd = "secrets list --sort-by=~createTime"
         if limit:
@@ -125,7 +125,7 @@ class SecretManager:
             latestVersion = self.latest_version(secretName)
             if not latestVersion:
                 print(f"Error: {secretName} has no versions")
-                self.rotatedSecrets.append({secretName: "Error: No versions"})
+                self.rotatedSecrets[secretName] = "Error: No versions"
                 continue
             print("Checking age of secret...")
             createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
@@ -135,7 +135,7 @@ class SecretManager:
                 latestAnnotation = self.latest_annotation(secretName)      
                 if not latestAnnotation:
                     print(f"Error: {secretName} has no annotation corresponding to latest version")
-                    self.rotatedSecrets.append({secretName: f"Error: Missing annotation"})
+                    self.rotatedSecrets[secretName] = "Error: Missing annotation"
                     continue
                 print("Rotating key...")
                 for oldVersionNum, oldKeyId in latestAnnotation.items():
@@ -144,10 +144,10 @@ class SecretManager:
                     self.disable_version(secretName, oldVersionNum)
                 newVersionNum = self.add_version(secretName, newKeyString)
                 self.add_annotation(secretName, newVersionNum, newKeyId)
-                self.rotatedSecrets.append({secretName: {oldVersionNum: oldKeyId, newVersionNum: newKeyId}})
+                self.rotatedSecrets[secretName] = {oldVersionNum: oldKeyId, newVersionNum: newKeyId}
             else:
                 print(f"{secretName} is not older than {expiryTime} day(s)")
-                self.rotatedSecrets.append({secretName: f"Less than {expiryTime} days old"})
+                self.rotatedSecrets[secretName] = f"Less than {expiryTime} days old"
                 continue
 
 class KeyManager:
@@ -156,7 +156,6 @@ class KeyManager:
         self.GCP = GCP(self.projectId, debug=debug)
         self.debugger = Debugger(debug)
         self.test = test
-        self.rotatedKeys = []
     def list_keys(self, limit=None):
         cmd = "services api-keys list --sort-by=~createTime"
         if limit:
@@ -207,7 +206,6 @@ class KeyManager:
         self.debugger.print(allowedIps)
         newKeyId, newKeyString = self.create_key(name, apiTargets, allowedIps)
         self.delete_key(oldKeyId)
-        self.rotatedKeys.append({"old": oldKeyId,"new": newKeyId})
         return newKeyId, newKeyString
 
 def main(projectId, expiryTime, debug=False, test=False):

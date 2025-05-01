@@ -32,11 +32,12 @@ class GCP:
             return None
 
 class SecretManager:
-    def __init__(self, projectId, credManager, debug=False):
+    def __init__(self, projectId, credMan, debug=False):
         self.projectId = projectId
         self.GCP = GCP(self.projectId, debug=debug)
-        self.credManager = credManager
+        self.credMan = credMan
         self.debugger = Debugger(debug)
+        self.rotatedSecrets = []
     def list_secrets(self, limit=None):
         cmd = "secrets list --sort-by=~createTime"
         if limit:
@@ -89,7 +90,7 @@ class SecretManager:
         self.GCP.exec(f"secrets versions disable {version} --secret={secretName}")
     def add_annotation(self, secretName, version, credId):
         annotations = self.list_annotations(secretName)
-        annotations[f"version_{version}"] = credId
+        annotations[version] = credId
         self.debugger.print(annotations)
         annotationStr = ",".join([key+"="+value for key, value in annotations.items()])
         self.debugger.print(annotationStr)
@@ -108,12 +109,41 @@ class SecretManager:
         newVersionDetails = self.GCP.custom_exec(cmd)
         newVersionNum = newVersionDetails.get("name").split("/")[-1]
         self.add_annotation(secretName, newVersionNum, credId)
+    def rotate_secrets(self, expiryTime):
+        secrets = self.list_secrets()
+        if not secrets:
+            self.debugger.print("There are no secrets in this project")
+        for secret in secrets:
+            secretName = secret.get("name").split("/")[-1]
+            latestVersion = self.latest_version(secretName)
+            if not latestVersion:
+                self.debugger.print(f"{secretName} has no versions")
+                self.rotatedSecrets.append({secretName: "Error: No versions"})
+                continue
+            createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+            self.debugger.print(f"Creation Time: {createDate}")
+            self.debugger.print(f"Current Time {datetime.now(timezone.utc)}")
+            if datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime):
+                latestAnnotation = self.latest_annotation(secretName)      
+                if not latestAnnotation:
+                    self.debugger.print(f"{secretName} version {latestVersion['name'].split("/")[-1]} has no annotations")
+                    self.rotatedSecrets.append({secretName: f"Error: Missing annotation"})
+                    continue
+                for oldSecretVersion, oldKeyId in latestAnnotation.items():
+                    newKeyId, newKeyString = self.credMan.rotate_key(oldKeyId)
+                newSecretVersion = self.add_version(secretName, newKeyId, newKeyString)
+                self.rotatedSecrets.append({secretName: {oldSecretVersion: oldKeyId, newSecretVersion: newKeyId}})
+            else:
+                self.debugger.print(f"{secretName} is not older than {expiryTime} day(s)")
+                self.rotatedSecrets.append({secretName: f"Less than {expiryTime} days old"})
+                continue
 
 class KeyManager:
     def __init__(self, projectId, debug=False):
         self.projectId = projectId
         self.GCP = GCP(self.projectId, debug=debug)
         self.debugger = Debugger(debug)
+        self.rotatedKeys = []
     def list_keys(self, limit=None):
         cmd = "services api-keys list --sort-by=~createTime"
         if limit:
@@ -156,58 +186,13 @@ class KeyManager:
         newKeyId = self.create_key(name, apiTargets, allowedIps)
         newKeyString = self.get_key_string(newKeyId)
         self.delete_key(oldKeyId)
+        self.rotatedKeys.append({"old": oldKeyId,"new": newKeyId})
         return newKeyId, newKeyString
-
-def checkSecret(sMan, secret, expiryTime):
-    name = secret.get("name").split("/")[-1]
-    print(f"Secret Name: {name}")
-    latestVersion = sMan.latest_version(name)
-    if not latestVersion:
-        print(f"{name} has no versions")
-        return name, {} 
-    createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
-    print(f"Creation Time: {createDate}")
-    print(f"Current Time {datetime.now(timezone.utc)}")
-    print(f"Is it older than {expiryTime} day(s)? {datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime)}")
-    if datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime):
-        latestAnnotation = sMan.latest_annotation(name)
-        return name, latestAnnotation
-    else:
-        print(f"{name} is not older than {expiryTime} day(s)")
-        return name, {}
-    
-def rotateKey(kMan, oldKeyId):
-    print(f"Old Key Id: {oldKeyId}")
-    newKeyId, newKeyString = kMan.rotate_key(oldKeyId)
-    print(f"New Key Id: {newKeyId}")
-    print(f"New Key String: {newKeyString}")
-    newKey = ({newKeyId: newKeyString})
-    return newKey
-
-def updateSecret(sMan, secretName, key):
-    print(f"Secret Name: {secretName}")
-    for keyId, keyString in key.items():
-        print(f"Key Id: {keyId}")
-        print(f"Key String: {keyString}")
-        sMan.add_version(secretName, keyId, keyString)
 
 def main(projectId, expiryTime, debug=False):
     kMan = KeyManager(projectId, debug)
     sMan = SecretManager(projectId, kMan, debug)
-    secrets = sMan.list_secrets()
-    if not secrets:
-        print("There are no secrets in this project")
-    for secret in secrets:
-        print(f"Checking if secret is old...")
-        secretName, latestAnnotation = checkSecret(sMan, secret, expiryTime)
-        if not latestAnnotation:
-            print(f"This secret does not need to be rotated")
-            continue
-        for secretVersion, keyId in latestAnnotation.items():
-            print(f"Rotating key...")
-            newKey = rotateKey(kMan, keyId)
-            print(f"Updating secret...")
-            updateSecret(sMan, secretName, newKey)
+    sMan.rotate_secrets(expiryTime)
 
 if __name__ == "__main__":
     # Create an ArgumentParser object

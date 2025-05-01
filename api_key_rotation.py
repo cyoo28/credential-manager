@@ -32,11 +32,12 @@ class GCP:
             return None
 
 class SecretManager:
-    def __init__(self, projectId, credMan, debug=False):
+    def __init__(self, projectId, credMan, debug=False, test=False):
         self.projectId = projectId
         self.GCP = GCP(self.projectId, debug=debug)
         self.credMan = credMan
         self.debugger = Debugger(debug)
+        self.test = test
         self.rotatedSecrets = []
     def list_secrets(self, limit=None):
         cmd = "secrets list --sort-by=~createTime"
@@ -57,14 +58,14 @@ class SecretManager:
             cmd += f" --filter='state:ENABLED'"
         versions = self.GCP.exec(cmd)
         if not versions:
-            self.debugger.print("No versions available (check that there is at least 1 enabled version)")
+            print("No versions available (check that there is at least 1 enabled version)")
         self.debugger.print(versions)
         return versions
     def list_annotations(self, secretName):
         secretDetails = self.describe_secret(secretName)
         annotations = secretDetails.get("annotations", {})
         if not annotations:
-            self.debugger.print("No annotations available (check that the secret has annotations)")
+            print("No annotations available (check that the secret has annotations)")
         self.debugger.print(annotations)
         return annotations
     def latest_version(self, secretName):
@@ -75,74 +76,86 @@ class SecretManager:
         annotations = self.list_annotations(secretName)
         if not latestVersion or not annotations:
             return {}
-        latestNum = latestVersion.get("name").split("/")[-1]
-        latestKey = f"version_{latestNum}"
+        latestKey = latestVersion.get("name").split("/")[-1]
         self.debugger.print(latestKey)
         latestValue = annotations.get(latestKey, None)
         if not latestValue:
-            self.debugger.print("The latest version has no corresponding annotation")
+            print("The latest version has no corresponding annotation")
         self.debugger.print(latestValue)        
         latestAnnotation = {latestKey: latestValue}
         return latestAnnotation if latestValue else {}
     def enable_version(self, secretName, version):
-        self.GCP.exec(f"secrets versions enable {version} --secret={secretName}")
+        if self.test:
+                print(f"Enabled version {version} for {secretName}")
+        else:
+            self.GCP.exec(f"secrets versions enable {version} --secret={secretName}")
     def disable_version(self, secretName, version):
-        self.GCP.exec(f"secrets versions disable {version} --secret={secretName}")
+        if self.test:
+                print(f"Disabled version {version} for {secretName}")
+        else:
+            self.GCP.exec(f"secrets versions disable {version} --secret={secretName}")
     def add_annotation(self, secretName, version, credId):
         annotations = self.list_annotations(secretName)
-        annotations[version] = credId
-        self.debugger.print(annotations)
+        annotations[f"{version}"] = credId
         annotationStr = ",".join([key+"="+value for key, value in annotations.items()])
         self.debugger.print(annotationStr)
-        self.GCP.exec(f"secrets update {secretName} --update-annotations='{annotationStr}'")
-    def add_version(self, secretName, credId, credValue):
-        oldVersionDetails = self.latest_version(secretName)
-        if oldVersionDetails:
-            oldVersionNum = oldVersionDetails.get("name").split("/")[-1]
-            self.disable_version(secretName, oldVersionNum)
+        if self.test:
+            print(f"Adding annotation '{version}: {credId}' to {secretName}")
         else:
-            self.debugger.print("No older versions to disable")
+            self.GCP.exec(f"secrets update {secretName} --update-annotations='{annotationStr}'")
+    def add_version(self, secretName, credValue):
         cmd = (
             f"echo -n {credValue} | gcloud secrets versions add {secretName} "
             f"--data-file=- --project={self.projectId} --format=json"
         )
-        newVersionDetails = self.GCP.custom_exec(cmd)
-        newVersionNum = newVersionDetails.get("name").split("/")[-1]
-        self.add_annotation(secretName, newVersionNum, credId)
+        if self.test:
+            print(f"Adding new credential '{credValue}' to {secretName}")
+            newVersionNum = "NewVersion#"
+        else:
+            newVersionDetails = self.GCP.custom_exec(cmd)
+            newVersionNum = newVersionDetails.get("name").split("/")[-1]
+        return newVersionNum
     def rotate_secrets(self, expiryTime):
         secrets = self.list_secrets()
         if not secrets:
-            self.debugger.print("There are no secrets in this project")
+            print("Error: There are no secrets in this project")
         for secret in secrets:
             secretName = secret.get("name").split("/")[-1]
+            print(f"Secret Name: {secretName}")
             latestVersion = self.latest_version(secretName)
             if not latestVersion:
-                self.debugger.print(f"{secretName} has no versions")
+                print(f"Error: {secretName} has no versions")
                 self.rotatedSecrets.append({secretName: "Error: No versions"})
                 continue
+            print("Checking age of secret...")
             createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
             self.debugger.print(f"Creation Time: {createDate}")
             self.debugger.print(f"Current Time {datetime.now(timezone.utc)}")
             if datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime):
                 latestAnnotation = self.latest_annotation(secretName)      
                 if not latestAnnotation:
-                    self.debugger.print(f"{secretName} version {latestVersion['name'].split("/")[-1]} has no annotations")
+                    print(f"Error: {secretName} has no annotation corresponding to latest version")
                     self.rotatedSecrets.append({secretName: f"Error: Missing annotation"})
                     continue
-                for oldSecretVersion, oldKeyId in latestAnnotation.items():
+                print("Rotating key...")
+                for oldVersionNum, oldKeyId in latestAnnotation.items():
                     newKeyId, newKeyString = self.credMan.rotate_key(oldKeyId)
-                newSecretVersion = self.add_version(secretName, newKeyId, newKeyString)
-                self.rotatedSecrets.append({secretName: {oldSecretVersion: oldKeyId, newSecretVersion: newKeyId}})
+                    print("Updating secret...")
+                    self.disable_version(secretName, oldVersionNum)
+                newVersionNum = self.add_version(secretName, newKeyString)
+                self.add_annotation(secretName, newVersionNum, newKeyId)
+                self.rotatedSecrets.append({secretName: {oldVersionNum: oldKeyId, newVersionNum: newKeyId}})
             else:
-                self.debugger.print(f"{secretName} is not older than {expiryTime} day(s)")
+                print(f"{secretName} is not older than {expiryTime} day(s)")
                 self.rotatedSecrets.append({secretName: f"Less than {expiryTime} days old"})
                 continue
 
 class KeyManager:
-    def __init__(self, projectId, debug=False):
+    def __init__(self, projectId, debug=False, test=False):
         self.projectId = projectId
         self.GCP = GCP(self.projectId, debug=debug)
         self.debugger = Debugger(debug)
+        self.test = test
         self.rotatedKeys = []
     def list_keys(self, limit=None):
         cmd = "services api-keys list --sort-by=~createTime"
@@ -151,6 +164,14 @@ class KeyManager:
         keys = self.GCP.exec(cmd)
         self.debugger.print(keys)
         return keys
+    def get_key_string(self, keyId):
+        keyString = self.GCP.exec(f"services api-keys get-key-string {keyId}").get("keyString")
+        self.debugger.print(keyString)
+        return keyString
+    def get_key_config(self, keyId):
+        keyConfig = self.GCP.exec(f"services api-keys describe {keyId}")
+        self.debugger.print(keyConfig)
+        return keyConfig
     def create_key(self, keyName, apiTargets=None, allowedIps=None):
         cmd = f"services api-keys create --display-name='{keyName}' "
         flags = []
@@ -160,19 +181,20 @@ class KeyManager:
             flags.append(f"--allowed-ips='{allowedIps}'")
         self.debugger.print(flags)
         cmd += " ".join(flags)
-        keyId = self.GCP.exec(cmd).get("response").get("uid")
+        if self.test:
+            print(f"Creating new key with\n  apiTargets:{apiTargets}\n  allowedIps: {allowedIps}")
+            keyId = "KeyIdFromKeyMan"
+            keyString = "KeyStringFromKeyMan"
+        else:
+            keyId = self.GCP.exec(cmd).get("response").get("uid")
+            keyString = self.get_key_string(keyId)
         self.debugger.print(keyId)
-        return keyId
+        return keyId, keyString
     def delete_key(self, keyId):
-        self.GCP.exec(f"services api-keys delete {keyId}")
-    def get_key_string(self, keyId):
-        keyString = self.GCP.exec(f"services api-keys get-key-string {keyId}").get("keyString")
-        self.debugger.print(keyString)
-        return keyString
-    def get_key_config(self, keyId):
-        keyConfig = self.GCP.exec(f"services api-keys describe {keyId}")
-        self.debugger.print(keyConfig)
-        return keyConfig
+        if self.test:
+            print(f"Deleting key '{keyId}'")
+        else:
+            self.GCP.exec(f"services api-keys delete {keyId}")
     def rotate_key(self, oldKeyId):
         keyInfo = self.get_key_config(oldKeyId)
         name = keyInfo.get("displayName")
@@ -183,15 +205,14 @@ class KeyManager:
         self.debugger.print(apiTargets)
         allowedIps = ",".join(ips) if ips else None
         self.debugger.print(allowedIps)
-        newKeyId = self.create_key(name, apiTargets, allowedIps)
-        newKeyString = self.get_key_string(newKeyId)
+        newKeyId, newKeyString = self.create_key(name, apiTargets, allowedIps)
         self.delete_key(oldKeyId)
         self.rotatedKeys.append({"old": oldKeyId,"new": newKeyId})
         return newKeyId, newKeyString
 
-def main(projectId, expiryTime, debug=False):
-    kMan = KeyManager(projectId, debug)
-    sMan = SecretManager(projectId, kMan, debug)
+def main(projectId, expiryTime, debug=False, test=False):
+    kMan = KeyManager(projectId, debug, test)
+    sMan = SecretManager(projectId, kMan, debug, test)
     sMan.rotate_secrets(expiryTime)
 
 if __name__ == "__main__":
@@ -201,10 +222,12 @@ if __name__ == "__main__":
     parser.add_argument("projectId", type=str, help="Google Cloud Project Id")
     parser.add_argument("expiryTime", type=int, help="Time in days after which secrets should be rotated")
     parser.add_argument("--debug", dest="debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--test", dest="test", action="store_true", help="Enable dry-run testing mode")
     # Parse the command-line arguments
     args = parser.parse_args(sys.argv[1:])
     projectId = args.projectId
     expiryTime = args.expiryTime
     debug = args.debug
-
-    main(projectId, expiryTime, debug)
+    test = args.test
+    # Pass arguments to the main function
+    main(projectId, expiryTime, debug, test)

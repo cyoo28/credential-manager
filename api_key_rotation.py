@@ -208,10 +208,24 @@ class KeyManager:
         self.delete_key(oldKeyId)
         return newKeyId, newKeyString
 
-def main(projectId, expiryTime, debug=False, test=False):
+def main(projectId, expiryTime, fileName="secrets-rotation.csv", debug=False, test=False):
     kMan = KeyManager(projectId, debug, test)
     sMan = SecretManager(projectId, kMan, debug, test)
     sMan.rotate_secrets(expiryTime)
+    with open(fileName, "w") as file:
+        file.write("Secret Name, Old Secret Version, Old Key Id, New Secret Version, New Key Id, Error\n")
+    for secretName, secretInfo in sMan.rotatedSecrets.items():
+        if isinstance(secretInfo, str):
+            with open(fileName, "a") as file:
+                file.write(f"{secretName}, -, -, -, -, {secretInfo}\n")
+        else:
+            with open(fileName, "a") as file:
+                file.write(f"{secretName}")
+            for secretVersion, keyId in secretInfo.items():
+                with open(fileName, "a") as file:
+                    file.write(f", {secretVersion}, {keyId}")
+            with open(fileName, "a") as file:
+                    file.write(", -\n")
 
 if __name__ == "__main__":
     # Create an ArgumentParser object
@@ -219,13 +233,15 @@ if __name__ == "__main__":
     # Create arguments
     parser.add_argument("projectId", type=str, help="Google Cloud Project Id")
     parser.add_argument("expiryTime", type=int, help="Time in days after which secrets should be rotated")
+    parser.add_argument("--fileName", dest="fileName", type=str, default="secrets-rotation.csv", help="Name of your file (\"secrets-rotation.csv\" if not specified)")
     parser.add_argument("--debug", dest="debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--test", dest="test", action="store_true", help="Enable dry-run testing mode")
     # Parse the command-line arguments
     args = parser.parse_args(sys.argv[1:])
     projectId = args.projectId
     expiryTime = args.expiryTime
+    fileName = args.fileName
     debug = args.debug
     test = args.test
     # Pass arguments to the main function
-    main(projectId, expiryTime, debug, test)
+    main(projectId, expiryTime, fileName, debug, test)

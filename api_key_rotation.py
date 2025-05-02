@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone, timedelta
 import argparse
 
-class Debugger:
+class Logger:
     def __init__(self, debug):
         self.debug = debug
     def print(self, msg):
@@ -15,7 +15,7 @@ class Debugger:
 class GCP:
     def __init__(self, projectId, debug=False):
         self.projectId = projectId
-        self.debugger = Debugger(debug)
+        self.debugger = Logger(debug)
     def exec(self, command, format="json"):
         cmd = f"gcloud {command} --format='{format}' --project={self.projectId}"
         self.debugger.print(cmd)
@@ -36,7 +36,7 @@ class SecretManager:
         self.projectId = projectId
         self.GCP = GCP(self.projectId, debug=debug)
         self.credMan = credMan
-        self.debugger = Debugger(debug)
+        self.debugger = Logger(debug)
         self.test = test
         self.rotatedSecrets = {}
     def list_secrets(self, limit=None):
@@ -121,7 +121,7 @@ class SecretManager:
             print("Error: There are no secrets in this project")
         for secret in secrets:
             secretName = secret.get("name").split("/")[-1]
-            print(f"Secret Name: {secretName}")
+            print(f"-----\nSecret Name: {secretName}")
             latestVersion = self.latest_version(secretName)
             if not latestVersion:
                 print(f"Error: {secretName} has no versions")
@@ -139,12 +139,12 @@ class SecretManager:
                     continue
                 print("Rotating key...")
                 for oldVersionNum, oldKeyId in latestAnnotation.items():
-                    newKeyId, newKeyString = self.credMan.rotate_key(oldKeyId)
+                    displayName, newKeyId, newKeyString = self.credMan.rotate_key(oldKeyId)
                     print("Updating secret...")
                     self.disable_version(secretName, oldVersionNum)
                 newVersionNum = self.add_version(secretName, newKeyString)
                 self.add_annotation(secretName, newVersionNum, newKeyId)
-                self.rotatedSecrets[secretName] = {oldVersionNum: oldKeyId, newVersionNum: newKeyId}
+                self.rotatedSecrets[secretName] = {"displayName": displayName, "oldVersion": oldVersionNum, "newVersion": newVersionNum, "oldKeyId": oldKeyId, "newKeyId": newKeyId}
             else:
                 print(f"{secretName} is not older than {expiryTime} day(s)")
                 self.rotatedSecrets[secretName] = f"Less than {expiryTime} days old"
@@ -154,7 +154,7 @@ class KeyManager:
     def __init__(self, projectId, debug=False, test=False):
         self.projectId = projectId
         self.GCP = GCP(self.projectId, debug=debug)
-        self.debugger = Debugger(debug)
+        self.debugger = Logger(debug)
         self.test = test
     def list_keys(self, limit=None):
         cmd = "services api-keys list --sort-by=~createTime"
@@ -206,26 +206,27 @@ class KeyManager:
         self.debugger.print(allowedIps)
         newKeyId, newKeyString = self.create_key(name, apiTargets, allowedIps)
         self.delete_key(oldKeyId)
-        return newKeyId, newKeyString
+        return name, newKeyId, newKeyString
 
 def main(projectId, expiryTime, fileName="secrets-rotation.csv", debug=False, test=False):
     kMan = KeyManager(projectId, debug, test)
     sMan = SecretManager(projectId, kMan, debug, test)
     sMan.rotate_secrets(expiryTime)
     with open(fileName, "w") as file:
-        file.write("Secret Name, Old Secret Version, Old Key Id, New Secret Version, New Key Id, Error\n")
+        file.write("Secret Name, Old Secret Version, New Secret Version, Key Name, Old Key Id, New Key Id, Error\n")
     for secretName, secretInfo in sMan.rotatedSecrets.items():
         if isinstance(secretInfo, str):
             with open(fileName, "a") as file:
-                file.write(f"{secretName}, -, -, -, -, {secretInfo}\n")
+                file.write(f"{secretName}, -, -, -, -, -, {secretInfo}\n")
         else:
             with open(fileName, "a") as file:
                 file.write(f"{secretName}")
-            for secretVersion, keyId in secretInfo.items():
-                with open(fileName, "a") as file:
-                    file.write(f", {secretVersion}, {keyId}")
-            with open(fileName, "a") as file:
-                    file.write(", -\n")
+                file.write(f", {secretInfo['oldVersion']}")
+                file.write(f", {secretInfo['newVersion']}")
+                file.write(f", {secretInfo['displayName']}")
+                file.write(f", {secretInfo['oldKeyId']}")
+                file.write(f", {secretInfo['newKeyId']}")
+                file.write(", -\n")
 
 if __name__ == "__main__":
     # Create an ArgumentParser object

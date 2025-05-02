@@ -4,6 +4,7 @@ import os
 import json
 from datetime import datetime, timezone, timedelta
 import argparse
+import boto3
 
 # Simple logger class (Don't need logging library for basic logging)
 class Logger:
@@ -66,7 +67,7 @@ class SecretManager:
         self.credMan = credMan
         self.debugger = Logger(debug)
         self.test = test
-        self.rotatedSecrets = {}
+        self.rotatedSecrets = []
     # Get secrets in the project
     # Arg:
     #   limit [int] *opt - limit on how many secrets are returned (default=None)
@@ -276,13 +277,13 @@ class SecretManager:
                 newVersionNum = self.add_version(secretName, newKeyString)
                 # Add the new annotation for the new version
                 self.add_annotation(secretName, newVersionNum, newKeyId)
-                # Log the changes
-                self.rotatedSecrets[secretName] = {"displayName": displayName, "oldVersion": oldVersionNum, "newVersion": newVersionNum, "oldKeyId": oldKeyId, "newKeyId": newKeyId}
             # Otherwise, don't rotate the secret
             else:
                 print(f"{secretName} is not older than {expiryTime} day(s)")
-                self.rotatedSecrets[secretName] = f"Less than {expiryTime} days old"
                 continue
+            # Log the changes
+            self.rotatedSecrets.append({"secretName": secretName, "displayName": displayName, "oldVersion": oldVersionNum, "newVersion": newVersionNum, "oldKeyId": oldKeyId, "newKeyId": newKeyId})
+
 # Class to manage keys in GCP
 class KeyManager:
     # Init Arg:
@@ -395,32 +396,45 @@ class KeyManager:
         self.delete_key(oldKeyId)
         return name, newKeyId, newKeyString
 
+# Send email notification with changed resources using AWS SES
 # Arg:
-#   projectId [str] - name of GCP project
-#   expiryTime [int] - limit for how old secrets can be (in days)
-#   fileName [str] *opt - name of the output file (default=secrets-rotation.csv)
-#   debug [bool] *opt - set to True to print debugging statements (default=False)
-#   test [bool] *opt - set to True to testing mode (default=False)
-def main(projectId, expiryTime, fileName="secrets-rotation.csv", debug=False, test=False):
-    # Initialize the key and secret manager instances
-    kMan = KeyManager(projectId, debug, test)
-    sMan = SecretManager(projectId, kMan, debug, test)
-    # Rotate any secrets that are older than the desired expiry time
-    sMan.rotate_secrets(expiryTime)
-    # Write results to output file
-    with open(fileName, "w") as file:
-        # Begin the file and write the headers
-        file.write("Secret Name, Old Secret Version, New Secret Version, Key Name, Old Key Id, New Key Id, Error\n")
-    for secretName, secretInfo in sMan.rotatedSecrets.items():
-        # If secretInfo is a string then an error has occured
-        if isinstance(secretInfo, str):
-            # Write the error
-            with open(fileName, "a") as file:
-                file.write(f"{secretName}, -, -, -, -, -, {secretInfo}\n")
-        # Otherwise, write the changed resource info
+#   sesClient [obj] - boto3 ses client instance
+#   sender [str] - SES sender
+#   recipients [list of str] - recipient email(s)
+#   subject [str] - email subject
+#   body [str] - email body
+def send_email(sesClient, sender, recipients, subject, body):
+    try:
+        print("sending notification to: {}".format(recipients))
+        charset = "UTF-8"
+        res = sesClient.send_email(Destination={ "ToAddresses": recipients },
+                                    Message={ "Body": { "Text": { "Charset": charset, "Data": body } },
+                                              "Subject": { "Charset": charset, "Data": subject } },
+                                    Source=sender)
+        if "MessageId" in res:
+            print("Notification sent successfully: {}".format(res["MessageId"]))
         else:
+            print("Notification may not have been sent: {}".format(res))
+    except Exception as e:
+        print("Failed to send email: {}".format(e))
+
+# Write changed resources to a file
+# Arg:
+#   sMan [obj] - secret manager instance
+#   fileName [str] - output file name
+def write_file(sMan, fileName):
+    # Begin the file and write the headers
+    with open(fileName, "w") as file:
+        file.write("Secret Name, Old Secret Version, New Secret Version, Key Name, Old Key Id, New Key Id\n")
+    # if no resources have been changed, report that
+    if not sMan.rotatedSecrets:
+        with open(fileName, "a") as file:
+            file.write("No resources have been changed")
+    # otherwise, report changed resources
+    else:
+        for secretInfo in sMan.rotatedSecrets:
             with open(fileName, "a") as file:
-                file.write(f"{secretName}")
+                file.write(f"{secretInfo['secretName']}")
                 file.write(f", {secretInfo['oldVersion']}")
                 file.write(f", {secretInfo['newVersion']}")
                 file.write(f", {secretInfo['displayName']}")
@@ -428,13 +442,43 @@ def main(projectId, expiryTime, fileName="secrets-rotation.csv", debug=False, te
                 file.write(f", {secretInfo['newKeyId']}")
                 file.write(", -\n")
 
+# Arg:
+#   projectId [str] - name of GCP project
+#   expiryTime [int] - limit for how old secrets can be (in days)
+#   outputType [dict] - specifies output file name and sender/recipient(s) emails
+#   debug [bool] *opt - set to True to print debugging statements (default=False)
+#   test [bool] *opt - set to True to testing mode (default=False)
+def main(projectId, expiryTime, outputType, debug=False, test=False):
+    # Initialize the key and secret manager instances
+    kMan = KeyManager(projectId, debug, test)
+    sMan = SecretManager(projectId, kMan, debug, test)
+    # Rotate any secrets that are older than the desired expiry time
+    sMan.rotate_secrets(expiryTime)
+    if outputType.get('fileName'):
+        # Write results to output file
+        write_file(sMan, fileName)
+    if outputType.get('sender') and outputType.get('recipients'):
+        # set up ses client
+        session = boto3.Session(profile_name='ix-dev')
+        sesClient = session.client('ses')
+        # extract sender and recipient(s) emails
+        sender = outputType.get('sender')
+        recipients = outputType.get('recipients')
+        # format subject and body of the email
+        subject = "Rotated Secret and Key Information"
+        body = json.dumps(sMan.rotatedSecrets, indent=2)
+        # Send email notification through SES
+        send_email(sesClient, sender, recipients, subject, body)
+
 if __name__ == "__main__":
     # Create an ArgumentParser object
     parser = argparse.ArgumentParser(description="Use this script to rotate keys associated with old secrets")
     # Create arguments
     parser.add_argument("projectId", type=str, help="Google Cloud Project Id")
     parser.add_argument("expiryTime", type=int, help="Time in days after which secrets should be rotated")
-    parser.add_argument("--fileName", dest="fileName", type=str, default="secrets-rotation.csv", help="Name of your file (\"secrets-rotation.csv\" if not specified)")
+    parser.add_argument("--fileName", dest="fileName", type=str, help="Name of your file (include .csv extension)")
+    parser.add_argument("--sender", dest="sender", type=str, help="SES sender to send notification")
+    parser.add_argument("--recipients", dest="recipients", type=str, nargs='+', help="Recipient(s) to receive notification")
     parser.add_argument("--debug", dest="debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--test", dest="test", action="store_true", help="Enable dry-run testing mode")
     # Parse the command-line arguments
@@ -442,7 +486,11 @@ if __name__ == "__main__":
     projectId = args.projectId
     expiryTime = args.expiryTime
     fileName = args.fileName
+    sender = args.sender
+    recipients = args.recipients
     debug = args.debug
     test = args.test
+    # Set up output types
+    outputType = {"fileName": fileName, "sender": sender, "recipients": recipients}
     # Pass arguments to the main function
-    main(projectId, expiryTime, fileName, debug, test)
+    main(projectId, expiryTime, outputType, debug, test)

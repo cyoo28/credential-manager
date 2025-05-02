@@ -6,9 +6,9 @@ from datetime import datetime, timezone, timedelta
 import argparse
 from api_key_rotation import SecretManager, KeyManager
 
-def main(projectId, fileName="secrets-config.csv", debug=False, test=False):
-    kMan = KeyManager(projectId, debug, test)
-    sMan = SecretManager(projectId, kMan, debug, test)
+def main(projectId, fileName="secrets-config.csv"):
+    kMan = KeyManager(projectId, debug=False, test=False)
+    sMan = SecretManager(projectId, kMan, debug=False, test=False)
     with open(fileName, "w") as file:
         file.write("Secret Name, Status, Latest Version Enabled, Versions Enabled, Error\n")
     secrets = sMan.list_secrets()
@@ -16,6 +16,11 @@ def main(projectId, fileName="secrets-config.csv", debug=False, test=False):
         print("Error: There are no secrets in this project")
     for secret in secrets:
         secretName = secret.get("name").split("/")[-1]
+        print(f"-----\nSecret Name: {secretName}")
+        secretType = sMan.check_type(secretName)
+        if not secretType=="api_key":
+            print(f"{secretName} is not an api_key")
+            continue
         versions = sMan.list_versions(secretName)
         if not versions:
             print(f"Error: {secretName} has no versions")
@@ -43,13 +48,9 @@ if __name__ == "__main__":
     # Create arguments
     parser.add_argument("projectId", type=str, help="Google Cloud Project Id")
     parser.add_argument("--fileName", dest="fileName", type=str, default="secrets-config.csv", help="Name of your file (\"secrets-config.csv\" if not specified)")
-    parser.add_argument("--debug", dest="debug", action="store_true", help="Enable debug mode")
-    parser.add_argument("--test", dest="test", action="store_true", help="Enable dry-run testing mode")
     # Parse the command-line arguments
     args = parser.parse_args(sys.argv[1:])
     projectId = args.projectId
     fileName = args.fileName
-    debug = args.debug
-    test = args.test
     # Pass arguments to the main function
-    main(projectId, fileName, debug, test)
+    main(projectId, fileName)

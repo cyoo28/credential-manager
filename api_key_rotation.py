@@ -84,6 +84,10 @@ class SecretManager:
         self.debugger.print(latestValue)        
         latestAnnotation = {latestKey: latestValue}
         return latestAnnotation if latestValue else {}
+    def check_type(self, secretName):
+        annotations = self.list_annotations(secretName)
+        secretType = annotations.get("type", None)
+        return secretType
     def enable_version(self, secretName, version):
         if self.test:
                 print(f"Enabled version {version} for {secretName}")
@@ -122,10 +126,13 @@ class SecretManager:
         for secret in secrets:
             secretName = secret.get("name").split("/")[-1]
             print(f"-----\nSecret Name: {secretName}")
+            secretType = self.check_type(secretName)
+            if not secretType=="api_key":
+                print(f"{secretName} is not an api_key")
+                continue
             latestVersion = self.latest_version(secretName)
             if not latestVersion:
                 print(f"Error: {secretName} has no versions")
-                self.rotatedSecrets[secretName] = "Error: No versions"
                 continue
             print("Checking age of secret...")
             createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
@@ -135,7 +142,6 @@ class SecretManager:
                 latestAnnotation = self.latest_annotation(secretName)      
                 if not latestAnnotation:
                     print(f"Error: {secretName} has no annotation corresponding to latest version")
-                    self.rotatedSecrets[secretName] = "Error: Missing annotation"
                     continue
                 print("Rotating key...")
                 for oldVersionNum, oldKeyId in latestAnnotation.items():

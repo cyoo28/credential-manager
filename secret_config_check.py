@@ -6,36 +6,51 @@ from datetime import datetime, timezone, timedelta
 import argparse
 from api_key_rotation import SecretManager, KeyManager
 
+# Arg:
+#   projectId [str] - name of GCP project
+#   fileName [str] *opt - name of the output file (default=secrets-rotation.csv)
 def main(projectId, fileName="secrets-config.csv"):
+    # Initialize the key and secret manager instances
     kMan = KeyManager(projectId, debug=False, test=False)
     sMan = SecretManager(projectId, kMan, debug=False, test=False)
+    # Begin the file and write the headers
     with open(fileName, "w") as file:
         file.write("Secret Name, Status, Latest Version Enabled, Versions Enabled, Error\n")
+    # List all the secrets
     secrets = sMan.list_secrets()
+    # There might not be any secrets in the project
     if not secrets:
         print("Error: There are no secrets in this project")
     for secret in secrets:
         secretName = secret.get("name").split("/")[-1]
         print(f"-----\nSecret Name: {secretName}")
         secretType = sMan.check_type(secretName)
+        # Check that the secret is for an api key
         if not secretType=="api_key":
             print(f"{secretName} is not an api_key")
             continue
+        # List the versions for the secret
         versions = sMan.list_versions(secretName)
+        # The secret might not have any versions
         if not versions:
             print(f"Error: {secretName} has no versions")
             with open(fileName, "a") as file:
                 file.write(f"{secretName}, INSUFFICIENT DATA, -, -, No versions\n")
             continue
+        # Count the number of enabled versions
         totalEnabled = sum(1 for version in versions if version.get('state') == 'ENABLED')
+        # Check if the latest version is enabled
         latestVersion = sMan.latest_version(secretName, enabled=False)
         latestEnabled = latestVersion.get('state')=='ENABLED'
         print(f"{secretName}:\n  is latest enabled: {latestEnabled}\n  total versions enabled: {totalEnabled}")
+        # Write results to output file
         with open(fileName, "a") as file:
             file.write(f"{secretName}")
+        # If latest is the only version enabled
         if latestEnabled and totalEnabled <= 1:
             with open(fileName, "a") as file:
                 file.write(", OK")
+        # Otherwise, it's in violation
         else:
             with open(fileName, "a") as file:
                 file.write(", IN VIOLATION")     

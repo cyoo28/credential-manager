@@ -15,7 +15,7 @@ def main(projectId, fileName="secrets-config.csv"):
     sMan = SecretManager(projectId, kMan, debug=False, test=False)
     # Begin the file and write the headers
     with open(fileName, "w") as file:
-        file.write("Secret Name, Status, Latest Version Enabled, Versions Enabled, Error\n")
+        file.write("Secret Name, Status, Is Latest Enabled?, How Many Versions Enabled?, Which Versions Enabled?, Error\n")
     # List all the secrets
     secrets = sMan.list_secrets()
     # There might not be any secrets in the project
@@ -35,10 +35,15 @@ def main(projectId, fileName="secrets-config.csv"):
         if not versions:
             print(f"Error: {secretName} has no versions")
             with open(fileName, "a") as file:
-                file.write(f"{secretName}, INSUFFICIENT DATA, -, -, No versions\n")
+                file.write(f"{secretName}, INSUFFICIENT DATA, -, -, -, No versions\n")
             continue
-        # Count the number of enabled versions
-        totalEnabled = sum(1 for version in versions if version.get('state') == 'ENABLED')
+        # Check the enabled versions
+        enabledVersions = []
+        for version in versions:
+            if version.get('state') == 'ENABLED':
+                enabledVersions.append(version.get('name').split("/")[-1])
+        totalEnabled = len(enabledVersions)
+        enabledVersions = "/".join(enabledVersions)
         # Check if the latest version is enabled
         latestVersion = sMan.latest_version(secretName, enabled=False)
         latestEnabled = latestVersion.get('state')=='ENABLED'
@@ -50,12 +55,17 @@ def main(projectId, fileName="secrets-config.csv"):
         if latestEnabled and totalEnabled <= 1:
             with open(fileName, "a") as file:
                 file.write(", OK")
+                error = "-"
         # Otherwise, it's in violation
         else:
             with open(fileName, "a") as file:
-                file.write(", IN VIOLATION")     
+                file.write(", IN VIOLATION")
+            if not latestVersion:
+                error = 'Latest version not enabled'
+            elif totalEnabled > 1:
+                error = 'Multiple versions enabled'
         with open(fileName, "a") as file:
-            file.write(f", {latestEnabled}, {totalEnabled}, -\n")
+            file.write(f", {latestEnabled}, {totalEnabled}, {enabledVersions}, {error}\n")
 
 if __name__ == "__main__":
     # Create an ArgumentParser object

@@ -447,13 +447,25 @@ def write_file(sMan, fileName):
 #   projectId [str] - name of GCP project
 #   expiryTime [int] - limit for how old secrets can be (in days)
 #   outputType [dict] - specifies output file name and sender/recipient(s) emails
-#   profileName [str] - boto3 profile to send email
+#   profileName [str] - boto3 profile to send email (default=None)
+#   secretName [str] - secret that contains service account key file (default=None)
 #   debug [bool] *opt - set to True to print debugging statements (default=False)
 #   test [bool] *opt - set to True to testing mode (default=False)
-def main(projectId, expiryTime, outputType, profileName=None, debug=False, test=False):
+def main(projectId, expiryTime, outputType, profileName=None, secretName=None, debug=False, test=False):
     # Initialize the key and secret manager instances
     kMan = KeyManager(projectId, debug, test)
     sMan = SecretManager(projectId, kMan, debug, test)
+    # Access secret for GCP service account for running in EC2 or ECS
+    if secretName:
+        regionName="us-east-1"
+        client = boto3.client("secretsmanager", region_name=regionName)
+        response = client.get_secret_value(SecretId=secretName)['SecretString']
+        # Write secret to a file
+        fileName = "tmp.json"
+        with open(fileName, "w") as f:
+            f.write(response)
+        # Authenticate with gcloud service account
+        os.popen(f"gcloud auth login --cred-file={fileName}; rm {fileName}")
     # Rotate any secrets that are older than the desired expiry time
     sMan.rotate_secrets(expiryTime)
     if outputType.get('fileName'):
@@ -483,6 +495,7 @@ if __name__ == "__main__":
     parser.add_argument("expiryTime", type=int, help="Time in days after which secrets should be rotated")
     parser.add_argument("--fileName", dest="fileName", type=str, help="Name of your file (include .csv extension)")
     parser.add_argument("--profileName", dest="profileName", type=str, help="Profile to use for boto3")
+    parser.add_argument("--secretName", dest="secretName", type=str, help="Secret for GCP service account key info")
     parser.add_argument("--sender", dest="sender", type=str, help="SES sender to send notification")
     parser.add_argument("--recipients", dest="recipients", type=str, nargs='+', help="Recipient(s) to receive notification")
     parser.add_argument("--debug", dest="debug", action="store_true", help="Enable debug mode")
@@ -493,6 +506,7 @@ if __name__ == "__main__":
     expiryTime = args.expiryTime
     fileName = args.fileName
     profileName = args.profileName
+    secretName = args.secretName
     sender = args.sender
     recipients = args.recipients
     debug = args.debug
@@ -500,4 +514,4 @@ if __name__ == "__main__":
     # Set up output types
     outputType = {"fileName": fileName, "sender": sender, "recipients": recipients}
     # Pass arguments to the main function
-    main(projectId, expiryTime, outputType, profileName, debug, test)
+    main(projectId, expiryTime, outputType, profileName, secretName, debug, test)

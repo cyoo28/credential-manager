@@ -257,8 +257,8 @@ class SecretManager:
             # Check the age of the secret
             print("Checking age of secret...")
             createDate = datetime.strptime(latestVersion.get("createTime"), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
-            self.debugger.print(f"Creation Time: {createDate}")
-            self.debugger.print(f"Current Time {datetime.now(timezone.utc)}")
+            print(f"Creation Time: {createDate}")
+            print(f" Current Time: {datetime.now(timezone.utc)}")
             # If the secret is older than the desired number of days
             if datetime.now(timezone.utc) - createDate > timedelta(days=expiryTime):
                 # Get the latest annotation (which contains the associated key uid)
@@ -318,7 +318,6 @@ class KeyManager:
     def get_key_string(self, keyId):
         # Get the key string value
         keyString = self.GCP.exec(f"services api-keys get-key-string {keyId}").get("keyString")
-        self.debugger.print(keyString)
         return keyString
     # Get the config for a key
     # Arg:
@@ -340,7 +339,7 @@ class KeyManager:
     #   keyString [str] - key string value
     def create_key(self, keyName, apiTargets=None, allowedIps=None):
         # Initial command to create key
-        cmd = f"services api-keys create --display-name='{keyName}' "
+        cmd = f"gcloud services api-keys create --display-name='{keyName}' --format='json' --project={self.projectId}"
         flags = []
         # If there are api targets, then add api-target flag(s) to add api targets
         if apiTargets:
@@ -349,7 +348,10 @@ class KeyManager:
         if allowedIps:
             flags.append(f"--allowed-ips='{allowedIps}'")
         self.debugger.print(flags)
+        # Add flags to command
         cmd += " ".join(flags)
+        # Move std.error to std.output (which has key string)
+        cmd += " 2>1"
         # if in test mode, print action and return dummy key id and string
         if self.test:
             print(f"Creating new key with\n  apiTargets:{apiTargets}\n  allowedIps: {allowedIps}")
@@ -357,7 +359,7 @@ class KeyManager:
             keyString = "KeyStringFromKeyMan"
         # otherwise, execute key creation command
         else:
-            keyId = self.GCP.exec(cmd).get("response").get("uid")
+            keyId = self.GCP.custom_exec(cmd).get("response").get("uid")
             keyString = self.get_key_string(keyId)
         self.debugger.print(keyId)
         return keyId, keyString
@@ -439,16 +441,16 @@ def write_file(sMan, fileName):
                 file.write(f", {secretInfo['newVersion']}")
                 file.write(f", {secretInfo['displayName']}")
                 file.write(f", {secretInfo['oldKeyId']}")
-                file.write(f", {secretInfo['newKeyId']}")
-                file.write(", -\n")
+                file.write(f", {secretInfo['newKeyId']}\n")
 
 # Arg:
 #   projectId [str] - name of GCP project
 #   expiryTime [int] - limit for how old secrets can be (in days)
 #   outputType [dict] - specifies output file name and sender/recipient(s) emails
+#   profileName [str] - boto3 profile to send email
 #   debug [bool] *opt - set to True to print debugging statements (default=False)
 #   test [bool] *opt - set to True to testing mode (default=False)
-def main(projectId, expiryTime, outputType, debug=False, test=False):
+def main(projectId, expiryTime, outputType, profileName=None, debug=False, test=False):
     # Initialize the key and secret manager instances
     kMan = KeyManager(projectId, debug, test)
     sMan = SecretManager(projectId, kMan, debug, test)
@@ -459,7 +461,10 @@ def main(projectId, expiryTime, outputType, debug=False, test=False):
         write_file(sMan, fileName)
     if outputType.get('sender') and outputType.get('recipients'):
         # set up ses client
-        session = boto3.Session(profile_name='ix-dev')
+        if profileName:
+            session = boto3.Session(profile_name=profileName)
+        else:
+            session = boto3.Session()
         sesClient = session.client('ses')
         # extract sender and recipient(s) emails
         sender = outputType.get('sender')
@@ -477,6 +482,7 @@ if __name__ == "__main__":
     parser.add_argument("projectId", type=str, help="Google Cloud Project Id")
     parser.add_argument("expiryTime", type=int, help="Time in days after which secrets should be rotated")
     parser.add_argument("--fileName", dest="fileName", type=str, help="Name of your file (include .csv extension)")
+    parser.add_argument("--profileName", dest="profileName", type=str, help="Profile to use for boto3")
     parser.add_argument("--sender", dest="sender", type=str, help="SES sender to send notification")
     parser.add_argument("--recipients", dest="recipients", type=str, nargs='+', help="Recipient(s) to receive notification")
     parser.add_argument("--debug", dest="debug", action="store_true", help="Enable debug mode")
@@ -486,6 +492,7 @@ if __name__ == "__main__":
     projectId = args.projectId
     expiryTime = args.expiryTime
     fileName = args.fileName
+    profileName = args.profileName
     sender = args.sender
     recipients = args.recipients
     debug = args.debug
@@ -493,4 +500,4 @@ if __name__ == "__main__":
     # Set up output types
     outputType = {"fileName": fileName, "sender": sender, "recipients": recipients}
     # Pass arguments to the main function
-    main(projectId, expiryTime, outputType, debug, test)
+    main(projectId, expiryTime, outputType, profileName, debug, test)

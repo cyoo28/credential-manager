@@ -179,7 +179,7 @@ class SecretManager:
     def enable_version(self, secretName, version):
         # if in test mode, print action
         if self.test:
-                print(f"Enabled version {version} for {secretName}")
+                print(f"'Enabled' version {version} for {secretName}")
         # otherwise, execute the enable command
         else:
             self.GCP.exec(f"secrets versions enable {version} --secret={secretName}")
@@ -190,7 +190,7 @@ class SecretManager:
     def disable_version(self, secretName, version):
         # if in test mode, print action
         if self.test:
-                print(f"Disabled version {version} for {secretName}")
+                print(f"'Disabled' version {version} for {secretName}")
         # otherwise, execute the disable command
         else:
             self.GCP.exec(f"secrets versions disable {version} --secret={secretName}")
@@ -207,7 +207,7 @@ class SecretManager:
         self.debugger.print(annotationStr)
         # if in test mode, print action
         if self.test:
-            print(f"Adding annotation '{version}: {credId}' to {secretName}")
+            print(f"'Adding' annotation '{version}: {credId}' to {secretName}")
         # otherwise, execute the update annotations command
         else:
             self.GCP.exec(f"secrets update {secretName} --update-annotations='{annotationStr}'")
@@ -225,7 +225,7 @@ class SecretManager:
         )
         # If in test mode, print action,
         if self.test:
-            print(f"Adding new credential '{credValue}' to {secretName}")
+            print(f"'Adding' new credential '{credValue}' to {secretName}")
             newVersionNum = "NewVersion#"
         # Otherwise, execute custom command
         else:
@@ -354,7 +354,7 @@ class KeyManager:
         cmd += " 2>1"
         # if in test mode, print action and return dummy key id and string
         if self.test:
-            print(f"Creating new key with\n  apiTargets:{apiTargets}\n  allowedIps: {allowedIps}")
+            print(f"'Creating' new key with\n  apiTargets:{apiTargets}\n  allowedIps: {allowedIps}")
             keyId = "KeyIdFromKeyMan"
             keyString = "KeyStringFromKeyMan"
         # otherwise, execute key creation command
@@ -369,7 +369,7 @@ class KeyManager:
     def delete_key(self, keyId):
         # if in test mode, print action
         if self.test:
-            print(f"Deleting key '{keyId}'")
+            print(f"'Deleting' key '{keyId}'")
         # otherwise, execute key deletion command
         else:
             self.GCP.exec(f"services api-keys delete {keyId}")
@@ -499,10 +499,10 @@ if __name__ == "__main__":
     parser.add_argument("expiryTime", type=int, help="Time in days after which secrets should be rotated")
     parser.add_argument("--fileName", dest="fileName", type=str, help="Name of your file (include .csv extension)")
     parser.add_argument("--profileName", dest="profileName", type=str, help="Profile to use for boto3")
-    parser.add_argument("--regionName", dest="regionName", type=str, default='us-east-1', help="aws region to access secret")
+    parser.add_argument("--regionName", dest="regionName", type=str, default='us-east-1', help="aws region to access secret (default='us-east-1')")
     parser.add_argument("--secretName", dest="secretName", type=str, help="Secret for GCP service account key info")
     parser.add_argument("--sender", dest="sender", type=str, help="SES sender to send notification")
-    parser.add_argument("--recipients", dest="recipients", type=str, nargs='+', help="Recipient(s) to receive notification")
+    parser.add_argument("--recipients", dest="recipients", type=str, nargs='+', help="Recipient(s) to receive notification (e.g. 'abc@gmail.com' 'xyz@yahoo.com'")
     parser.add_argument("--debug", dest="debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--test", dest="test", action="store_true", help="Enable dry-run testing mode")
     # Parse the command-line arguments

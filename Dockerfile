@@ -1,37 +1,30 @@
-# Stage 1: Install dependencies
-FROM python:latest AS build
-ARG CODENAME="not_set"
+# Get base image
+FROM gcr.io/google.com/cloudsdktool/cloud-sdk:latest 
 
-ENV CODENAME=${CODENAME}
-ENV LANG=C.UTF-8
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PATH="/${CODENAME}/venv/bin:$PATH"
+# Install python3-venv
+RUN apt-get update && \
+    apt-get install -y python3-venv && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-WORKDIR /${CODENAME}
+# Set up envrionment variables
+ENV VENV_PATH=/venv
+ENV PATH="${VENV_PATH}/bin:$PATH"
 
-RUN python -m venv /${CODENAME}/venv
-COPY ${CODENAME}-requirements.txt .
-RUN pip install --no-cache-dir -r ${CODENAME}-requirements.txt
+# Set up working directory
+WORKDIR /api_key_rotation
 
-# Stage 2: Copy only necessary files for final image
-FROM python:alpine
-ARG CODENAME="not_set"
+# Create a virtual env
+RUN python3 -m venv ${VENV_PATH}
 
-WORKDIR /${CODENAME}
+# Install boto3
+RUN ${VENV_PATH}/bin/pip install --upgrade pip boto3
 
-ENV CODENAME=${CODENAME}
-ENV PYTHONUNBUFFERED=1
-ENV PATH="/venv/bin:$PATH"
+# Copy script into image
+COPY api_key_rotation.py ./
 
-COPY ${CODENAME}.py ./
-COPY --from=build /${CODENAME}/venv /venv
+# Set entrypoint to run script
+ENTRYPOINT ["python3", "api_key_rotation.py"]
 
-# Stage 3: Define environment variables for use in code and execute code
-ENV bucket=026090555438-stockdata
-ENV rssKey=rssList.json
-ENV metaKey=metadata
-ENV htmlKey=htmldata
-ENV headKey=tableHead.txt
-ENV tableKey=tableContents.txt
-ENTRYPOINT python /${CODENAME}/${CODENAME}.py
+# Default command
+CMD ["-h"]

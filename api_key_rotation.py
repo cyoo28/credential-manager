@@ -461,7 +461,6 @@ def main(projectId, expiryTime, outputType, profileName=None, regionName='us-eas
         session = boto3.Session(profile_name=profileName, region_name=regionName)
     else:
         session = boto3.Session(region_name=regionName)
-
     if secretName:
         smClient = session.client('secretsmanager')
         response = smClient.get_secret_value(SecretId=secretName)['SecretString']
@@ -473,6 +472,8 @@ def main(projectId, expiryTime, outputType, profileName=None, regionName='us-eas
         _ = os.popen(f"gcloud auth activate-service-account --key-file={fileName} --project 'ix-sandbox'; rm {fileName}").read()
     # Rotate any secrets that are older than the desired expiry time
     sMan.rotate_secrets(expiryTime)
+    # Revoke GCP credentials
+    _ = os.popen(f"gcloud auth revoke").read()
     if outputType.get('fileName'):
         # Write results to output file
         write_file(sMan, fileName)

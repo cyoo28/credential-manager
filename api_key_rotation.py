@@ -282,7 +282,7 @@ class SecretManager:
                 print(f"{secretName} is not older than {expiryTime} day(s)")
                 continue
             # Log the changes
-            self.rotatedSecrets.append({"secretName": secretName, "displayName": displayName, "oldVersion": oldVersionNum, "newVersion": newVersionNum, "oldKeyId": oldKeyId, "newKeyId": newKeyId})
+            self.rotatedSecrets.append({"secretName": secretName, "oldVersion": oldVersionNum, "newVersion": newVersionNum, "keyName": displayName, "oldKeyId": oldKeyId, "newKeyId": newKeyId})
 
 # Class to manage keys in GCP
 class KeyManager:
@@ -439,7 +439,7 @@ def write_file(sMan, fileName):
                 file.write(f"{secretInfo['secretName']}")
                 file.write(f", {secretInfo['oldVersion']}")
                 file.write(f", {secretInfo['newVersion']}")
-                file.write(f", {secretInfo['displayName']}")
+                file.write(f", {secretInfo['keyName']}")
                 file.write(f", {secretInfo['oldKeyId']}")
                 file.write(f", {secretInfo['newKeyId']}\n")
 

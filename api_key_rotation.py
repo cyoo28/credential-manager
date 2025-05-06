@@ -448,24 +448,29 @@ def write_file(sMan, fileName):
 #   expiryTime [int] - limit for how old secrets can be (in days)
 #   outputType [dict] - specifies output file name and sender/recipient(s) emails
 #   profileName [str] - boto3 profile to send email (default=None)
+#   regionName [str] - aws region to access secret (default=us-east-1)
 #   secretName [str] - secret that contains service account key file (default=None)
 #   debug [bool] *opt - set to True to print debugging statements (default=False)
 #   test [bool] *opt - set to True to testing mode (default=False)
-def main(projectId, expiryTime, outputType, profileName=None, secretName=None, debug=False, test=False):
+def main(projectId, expiryTime, outputType, profileName=None, regionName='us-east-1', secretName=None, debug=False, test=False):
     # Initialize the key and secret manager instances
     kMan = KeyManager(projectId, debug, test)
     sMan = SecretManager(projectId, kMan, debug, test)
     # Access secret for GCP service account for running in EC2 or ECS
+    if profileName:
+        session = boto3.Session(profile_name=profileName, region_name=regionName)
+    else:
+        session = boto3.Session(region_name=regionName)
+
     if secretName:
-        regionName="us-east-1"
-        client = boto3.client("secretsmanager", region_name=regionName)
-        response = client.get_secret_value(SecretId=secretName)['SecretString']
+        smClient = session.client('secretsmanager')
+        response = smClient.get_secret_value(SecretId=secretName)['SecretString']
         # Write secret to a file
         fileName = "tmp.json"
         with open(fileName, "w") as f:
             f.write(response)
         # Authenticate with gcloud service account
-        os.popen(f"gcloud auth login --cred-file={fileName}; rm {fileName}")
+        _ = os.popen(f"gcloud auth activate-service-account --key-file={fileName} --project 'ix-sandbox'; rm {fileName}").read()
     # Rotate any secrets that are older than the desired expiry time
     sMan.rotate_secrets(expiryTime)
     if outputType.get('fileName'):
@@ -473,10 +478,6 @@ def main(projectId, expiryTime, outputType, profileName=None, secretName=None, d
         write_file(sMan, fileName)
     if outputType.get('sender') and outputType.get('recipients'):
         # set up ses client
-        if profileName:
-            session = boto3.Session(profile_name=profileName)
-        else:
-            session = boto3.Session()
         sesClient = session.client('ses')
         # extract sender and recipient(s) emails
         sender = outputType.get('sender')
@@ -495,6 +496,7 @@ if __name__ == "__main__":
     parser.add_argument("expiryTime", type=int, help="Time in days after which secrets should be rotated")
     parser.add_argument("--fileName", dest="fileName", type=str, help="Name of your file (include .csv extension)")
     parser.add_argument("--profileName", dest="profileName", type=str, help="Profile to use for boto3")
+    parser.add_argument("--regionName", dest="regionName", type=str, default='us-east-1', help="aws region to access secret")
     parser.add_argument("--secretName", dest="secretName", type=str, help="Secret for GCP service account key info")
     parser.add_argument("--sender", dest="sender", type=str, help="SES sender to send notification")
     parser.add_argument("--recipients", dest="recipients", type=str, nargs='+', help="Recipient(s) to receive notification")
@@ -506,6 +508,7 @@ if __name__ == "__main__":
     expiryTime = args.expiryTime
     fileName = args.fileName
     profileName = args.profileName
+    regionName = args.regionName
     secretName = args.secretName
     sender = args.sender
     recipients = args.recipients
@@ -514,4 +517,4 @@ if __name__ == "__main__":
     # Set up output types
     outputType = {"fileName": fileName, "sender": sender, "recipients": recipients}
     # Pass arguments to the main function
-    main(projectId, expiryTime, outputType, profileName, secretName, debug, test)
+    main(projectId, expiryTime, outputType, profileName, regionName, secretName, debug, test)

@@ -13,7 +13,8 @@ pipeline {
         stage('Checkout') {
             steps {
                 // Check out the code from the repository
-                git 'https://github.com/cyoo28/credential-manager.git'
+                git branch: 'main', url: 'https://github.com/cyoo28/credential-manager.git'
+                //git 'https://github.com/cyoo28/credential-manager.git'
             }
         }
 

@@ -26,6 +26,17 @@ pipeline {
                 }
             }
         }
+        
+        stage('Test Docker Image') {
+            steps {
+                script {
+                    // Run the Docker image
+                    sh '''
+                        docker run --rm ${DOCKER_IMAGE_NAME}:${DOCKER_TAG} ix-sandbox 0 --secretName ix-gcp-service-account --sender notify@ixcloudsecurity.com --recipients cyoo@ixcloudsecurity.com --test
+                    '''
+                }
+            }
+        }
 
         stage('Login to AWS ECR') {
             steps {

@@ -32,8 +32,8 @@ pipeline {
                 script {
                     // Log in to AWS ECR using the AWS CLI and IAM role credentials
                     sh '''
-                        $(aws ecr get-login --no-include-email --region us-east-1)
-                    '''  // Replace "region" with your AWS region (e.g., us-east-1)
+                        $(aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 026090555438.dkr.ecr.us-east-1.amazonaws.com)
+                    '''
                 }
             }
         }

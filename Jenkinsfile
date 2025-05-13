@@ -1,5 +1,5 @@
 // Flag for if changes have been made to api_key_rotation.py
-def changesFound = true //false
+def changesFound = false
 
 pipeline {
     agent any
@@ -27,7 +27,7 @@ pipeline {
                 //git 'https://github.com/cyoo28/credential-manager.git'
             }
         }
-        /*
+
         stage('Detect Changes') {
             steps {
                 script {
@@ -47,7 +47,7 @@ pipeline {
                 }
             }
         }
-        */
+        
         stage('Build Docker Image') {
             when {
                 expression { return changesFound }

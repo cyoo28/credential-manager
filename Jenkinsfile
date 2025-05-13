@@ -122,7 +122,7 @@ pipeline {
                       --overrides '{
                         "containerOverrides": [{
                           "name": "${ECS_CONTAINER}",
-                          "command": ["ix-sandbox", "0", "secretName", "ix-gcp-service-account", "--sender", "notify@ixcloudsecurity.com", "--recipients", "alert@ixcloudsecurity.com", "--test"]
+                          "command": ["ix-sandbox", "0", "--secretName", "ix-gcp-service-account", "--sender", "notify@ixcloudsecurity.com", "--recipients", "alert@ixcloudsecurity.com", "--test"]
                         }]
                       }'
                     """

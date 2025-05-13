@@ -7,16 +7,16 @@ pipeline {
     environment {
         // ECR repository details
         ECR_REGISTRY = '026090555438.dkr.ecr.us-east-1.amazonaws.com'
-        ECR_REPO_NAME = 'credential-manager/key-rotation'
-        DOCKER_IMAGE_NAME = "${ECR_REGISTRY}/${ECR_REPO_NAME}"
+        ECR_REPO = 'credential-manager/key-rotation'
+        DOCKER_IMAGE = "${ECR_REGISTRY}/${ECR_REPO}"
         DOCKER_TAG = 'latest'
         // ECS cluster and task details
         AWS_REGION = 'us-east-1'
         CLUSTER_NAME = 'gcpKeyRotation-cluster'
         TASK_DEFINITION = 'gcpKeyRotation-task:1'
-        SUBNET_ID = 'subnet-020c7a0407b1103ba'
-        SECURITY_GROUP_ID = 'sg-03e632351b9ecb3e0'
-        ECS_CONTAINER_NAME = 'gcpKeyRotation-container'
+        SUBNET = 'subnet-020c7a0407b1103ba'
+        SECURITY_GROUP = 'sg-03e632351b9ecb3e0'
+        ECS_CONTAINER = 'gcpKeyRotation-container'
     }
 
     stages {
@@ -47,7 +47,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Build Docker Image') {
             when {
                 expression { return changesFound }
@@ -55,7 +55,7 @@ pipeline {
             steps {
                 script {
                     // Build the Docker image using the Dockerfile in the repo
-                    docker.build("${DOCKER_IMAGE_NAME}:${DOCKER_TAG}")
+                    docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
                 }
             }
         }
@@ -68,7 +68,7 @@ pipeline {
                 script {
                     // Run the Docker image
                     sh '''
-                        docker run --rm ${DOCKER_IMAGE_NAME}:${DOCKER_TAG} ix-sandbox 0 --secretName ix-gcp-service-account --sender notify@ixcloudsecurity.com --recipients cyoo@ixcloudsecurity.com --test
+                        docker run --rm ${DOCKER_IMAGE}:${DOCKER_TAG} ix-sandbox 0 --secretName ix-gcp-service-account --sender notify@ixcloudsecurity.com --recipients cyoo@ixcloudsecurity.com --test
                     '''
                 }
             }
@@ -96,11 +96,11 @@ pipeline {
                 script {
                     // Tag the image with the ECR registry URL
                     sh '''
-                        docker tag ${DOCKER_IMAGE_NAME}:${DOCKER_TAG} ${ECR_REGISTRY}/${ECR_REPO_NAME}:${DOCKER_TAG}
+                        docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REGISTRY}/${ECR_REPO}:${DOCKER_TAG}
                     '''
                     // Push the image to ECR
                     sh '''
-                        docker push ${ECR_REGISTRY}/${ECR_REPO_NAME}:${DOCKER_TAG}
+                        docker push ${ECR_REGISTRY}/${ECR_REPO}:${DOCKER_TAG}
                     '''
                 }
             }
@@ -118,10 +118,10 @@ pipeline {
                       --cluster ${CLUSTER_NAME} \
                       --launch-type FARGATE \
                       --task-definition ${TASK_DEFINITION} \
-                      --network-configuration 'awsvpcConfiguration={subnets=["${SUBNET_ID}"],securityGroups=["${SECURITY_GROUP}"],assignPublicIp="ENABLED"}' \
+                      --network-configuration 'awsvpcConfiguration={subnets=["${SUBNET}"],securityGroups=["${SECURITY_GROUP}"],assignPublicIp="ENABLED"}' \
                       --overrides '{
                         "containerOverrides": [{
-                          "name": "${CONTAINER_NAME}",
+                          "name": "${ECS_CONTAINER}",
                           "command": [ix-sandbox, 0, --sender, notify@ixcloudsecurity.com, --recipients, alert@ixcloudsecurity.com, --test]
                         }]
                       }'

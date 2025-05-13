@@ -7,7 +7,6 @@ pipeline {
         ECR_REPO_NAME = 'credential-manager/key-rotation'
         DOCKER_IMAGE_NAME = "${ECR_REGISTRY}/${ECR_REPO_NAME}"
         DOCKER_TAG = 'latest'
-        CHANGES_FOUND = false
     }
 
     stages {
@@ -23,12 +22,11 @@ pipeline {
             steps {
                 script {
                     def changes = sh(
-                        script: "git diff --name-only HEAD~1 HEAD | grep '^api_key_rotation.py\\$' || true",
+                        script: 'git diff --name-only HEAD~1 HEAD | grep "^api_key_rotation.py\$" || true',
                         returnStdout: true
                     ).trim()
 
                     if (changes) {
-                        env.CHANGES_FOUND = 'true'
                         echo "Changes detected in api_key_rotation.py"
                     } else {
                         echo "No changes in api_key_rotation.py. Skipping pipeline."

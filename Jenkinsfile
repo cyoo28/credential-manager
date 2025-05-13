@@ -26,7 +26,7 @@ pipeline {
                 //git 'https://github.com/cyoo28/credential-manager.git'
             }
         }
-        """
+        /*
         stage('Detect Changes') {
             steps {
                 script {
@@ -46,7 +46,7 @@ pipeline {
                 }
             }
         }
-        """
+        */
         stage('Build Docker Image') {
             when {
                 expression { env.CHANGES_FOUND == true }

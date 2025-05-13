@@ -1,9 +1,10 @@
+// Flag for if changes have been made to api_key_rotation.py
+def changesFound = true //false
+
 pipeline {
     agent any
 
     environment {
-        // Flag for if changes have been made to api_key_rotation.py
-        CHANGES_FOUND = true
         // ECR repository details
         ECR_REGISTRY = '026090555438.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPO_NAME = 'credential-manager/key-rotation'
@@ -37,7 +38,7 @@ pipeline {
                     // Check if there have been any changes made to api_key_rotation.py
                     if (changes) {
                         echo "Changes detected in api_key_rotation.py"
-                        env.CHANGES_FOUND = true
+                        changesFound = true
                     } else {
                         echo "No changes in api_key_rotation.py. Skipping pipeline."
                         currentBuild.result = 'SUCCESS'
@@ -49,7 +50,7 @@ pipeline {
         */
         stage('Build Docker Image') {
             when {
-                expression { env.CHANGES_FOUND == true }
+                expression { return changesFound }
             }
             steps {
                 script {
@@ -61,7 +62,7 @@ pipeline {
         
         stage('Test Docker Image') {
             when {
-                expression { env.CHANGES_FOUND == true }
+                expression { return changesFound }
             }
             steps {
                 script {
@@ -75,7 +76,7 @@ pipeline {
 
         stage('Login to AWS ECR') {
             when {
-                expression { env.CHANGES_FOUND == true }
+                expression { return changesFound }
             }
             steps {
                 script {
@@ -89,7 +90,7 @@ pipeline {
 
         stage('Push Docker Image to ECR') {
             when {
-                expression { env.CHANGES_FOUND == true }
+                expression { return changesFound }
             }
             steps {
                 script {
@@ -107,7 +108,7 @@ pipeline {
 
         stage('Test Docker Image as ECS Task') {
             when {
-                expression { env.CHANGES_FOUND == true }
+                expression { return changesFound }
             }
             steps {
                 script {

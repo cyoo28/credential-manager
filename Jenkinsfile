@@ -23,7 +23,7 @@ pipeline {
             steps {
                 script {
                     def changes = sh(
-                        script: "git diff --name-only HEAD~1 HEAD | grep '^api_key_rotation.py$' || true",
+                        script: "git diff --name-only HEAD~1 HEAD | grep '^api_key_rotation.py\\$' || true",
                         returnStdout: true
                     ).trim()
 

@@ -100,10 +100,10 @@ pipeline {
 
     post {
         success {
-            echo 'Docker image built and pushed to AWS ECR successfully!'
+            echo 'Pipeline executed successfully!'
         }
         failure {
-            echo 'Build failed. Check the logs for details.'
+            echo 'Pipeline failed. Check the logs for details.'
         }
     }
 }

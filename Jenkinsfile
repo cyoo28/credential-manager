@@ -7,6 +7,7 @@ pipeline {
         ECR_REPO_NAME = 'credential-manager/key-rotation'
         DOCKER_IMAGE_NAME = "${ECR_REGISTRY}/${ECR_REPO_NAME}"
         DOCKER_TAG = 'latest'
+        CHANGES_FOUND = false
     }
 
     stages {
@@ -25,19 +26,23 @@ pipeline {
                         script: 'git diff --name-only HEAD~1 HEAD | grep "^api_key_rotation.py\$" || true',
                         returnStdout: true
                     ).trim()
-
+                    // Check if there have been any changes made to api_key_rotation.py
                     if (changes) {
                         echo "Changes detected in api_key_rotation.py"
+                        env.CHANGES_FOUND = true
                     } else {
                         echo "No changes in api_key_rotation.py. Skipping pipeline."
                         currentBuild.result = 'SUCCESS'
-                        exit 0
+                        return 
                     }
                 }
             }
         }
 
         stage('Build Docker Image') {
+            when {
+                expression { env.CHANGES_FOUND == true }
+            }
             steps {
                 script {
                     // Build the Docker image using the Dockerfile in the repo
@@ -47,6 +52,9 @@ pipeline {
         }
         
         stage('Test Docker Image') {
+            when {
+                expression { env.CHANGES_FOUND == true }
+            }
             steps {
                 script {
                     // Run the Docker image
@@ -58,6 +66,9 @@ pipeline {
         }
 
         stage('Login to AWS ECR') {
+            when {
+                expression { env.CHANGES_FOUND == true }
+            }
             steps {
                 script {
                     // Log in to AWS ECR using the AWS CLI and IAM role credentials
@@ -69,6 +80,9 @@ pipeline {
         }
 
         stage('Push Docker Image to ECR') {
+            when {
+                expression { env.CHANGES_FOUND == true }
+            }
             steps {
                 script {
                     // Tag the image with the ECR registry URL

@@ -1,5 +1,5 @@
 // Flag for if changes have been made to api_key_rotation.py
-def changesFound = true //false 
+def changesFound = true //false
 
 pipeline {
     agent any
@@ -122,7 +122,7 @@ pipeline {
                       --overrides '{
                         "containerOverrides": [{
                           "name": "${ECS_CONTAINER}",
-                          "command": ["ix-sandbox", "0", "--sender", "notify@ixcloudsecurity.com", "--recipients", "alert@ixcloudsecurity.com", "--test"]
+                          "command": ["ix-sandbox", "0", "secretName", "ix-gcp-service-account", "--sender", "notify@ixcloudsecurity.com", "--recipients", "alert@ixcloudsecurity.com", "--test"]
                         }]
                       }'
                     """

@@ -339,7 +339,7 @@ class KeyManager:
     #   keyString [str] - key string value
     def create_key(self, keyName, apiTargets=None, allowedIps=None):
         # Initial command to create key
-        cmd = f"gcloud services api-keys create --display-name='{keyName}' --format='json' --project={self.projectId}"
+        cmd = f"gcloud services api-keys create --display-name='{keyName}' --format=json --project={self.projectId}"
         flags = []
         # If there are api targets, then add api-target flag(s) to add api targets
         if apiTargets:
@@ -452,7 +452,7 @@ def write_file(sMan, fileName):
 #   secretName [str] - secret that contains service account key file (default=None)
 #   debug [bool] *opt - set to True to print debugging statements (default=False)
 #   test [bool] *opt - set to True to testing mode (default=False)
-def main(projectId, expiryTime, outputType, profileName=None, regionName='us-east-1', secretName=None, debug=False, test=False):
+def main(projectId, expiryTime, outputType, profileName=None, regionName="us-east-1", secretName=None, debug=False, test=False):
     # Initialize the key and secret manager instances
     kMan = KeyManager(projectId, debug, test)
     sMan = SecretManager(projectId, kMan, debug, test)
@@ -462,8 +462,8 @@ def main(projectId, expiryTime, outputType, profileName=None, regionName='us-eas
     else:
         session = boto3.Session(region_name=regionName)
     if secretName:
-        smClient = session.client('secretsmanager')
-        response = smClient.get_secret_value(SecretId=secretName)['SecretString']
+        smClient = session.client("secretsmanager")
+        response = smClient.get_secret_value(SecretId=secretName)["SecretString"]
         # Write secret to a file
         fileName = "tmp.json"
         with open(fileName, "w") as f:
@@ -476,20 +476,31 @@ def main(projectId, expiryTime, outputType, profileName=None, regionName='us-eas
     # Revoke GCP credentials
     _ = os.popen(f"gcloud auth revoke").read()
     """
-    if outputType.get('fileName'):
-        # Write results to output file
+    # Write results to output file
+    if outputType.get("fileName"):
         write_file(sMan, fileName)
-    if outputType.get('sender') and outputType.get('recipients'):
+    # Send email(s)
+    if outputType.get("sender"):
         # set up ses client
-        sesClient = session.client('ses')
-        # extract sender and recipient(s) emails
-        sender = outputType.get('sender')
-        recipients = outputType.get('recipients')
-        # format subject and body of the email
-        subject = "Rotated Secret and Key Information"
-        body = json.dumps(sMan.rotatedSecrets, indent=2)
-        # Send email notification through SES
-        send_email(sesClient, sender, recipients, subject, body)
+        sesClient = session.client("ses")
+        # get sender and recipient(s)
+        sender = outputType.get("sender")
+        if outputType.get("recipients"):
+            recipients = outputType.get("recipients")
+            # format subject and body of general email notification
+            genSubject = "Rotated Secret and Key Information"
+            genBody = json.dumps(sMan.rotatedSecrets, indent=2)
+            # Send email notification through SES
+            send_email(sesClient, sender, recipients, genSubject, genBody)
+        # send individual email notifications to key owners
+        for rotatedSecret in sMan.rotatedSecrets:
+            annotations = sMan.list_annotations(rotatedSecret["secretName"])
+            notify = annotations.get("notification")
+            if notify:
+                indSubject = "Your Key has been Rotated"
+                indBody = json.dumps(rotatedSecret, indent=2)
+                # Send email notification through SES
+                send_email(sesClient, sender, [notify], indSubject, indBody)
 
 if __name__ == "__main__":
     # Create an ArgumentParser object

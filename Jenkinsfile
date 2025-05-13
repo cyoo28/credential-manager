@@ -2,12 +2,20 @@ pipeline {
     agent any
 
     environment {
+        // Flag for if changes have been made to api_key_rotation.py
+        CHANGES_FOUND = false
         // ECR repository details
         ECR_REGISTRY = '026090555438.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPO_NAME = 'credential-manager/key-rotation'
         DOCKER_IMAGE_NAME = "${ECR_REGISTRY}/${ECR_REPO_NAME}"
         DOCKER_TAG = 'latest'
-        CHANGES_FOUND = false
+        // ECS cluster and task details
+        AWS_REGION = 'us-east-1'
+        CLUSTER_NAME = 'gcpKeyRotation-cluster'
+        TASK_DEFINITION = 'gcpKeyRotation-task:1'
+        SUBNET_ID = 'subnet-020c7a0407b1103ba'
+        SECURITY_GROUP_ID = 'sg-03e632351b9ecb3e0'
+        ECS_CONTAINER_NAME = 'gcpKeyRotation-container'
     }
 
     stages {
@@ -93,6 +101,27 @@ pipeline {
                     sh '''
                         docker push ${ECR_REGISTRY}/${ECR_REPO_NAME}:${DOCKER_TAG}
                     '''
+                }
+            }
+        }
+
+        stage('Test Docker Image as ECS Task') {
+            steps {
+                script {
+                    sh """
+                    aws ecs run-task \
+                      --region ${AWS_REGION} \
+                      --cluster ${CLUSTER_NAME} \
+                      --launch-type FARGATE \
+                      --task-definition ${TASK_DEFINITION} \
+                      --network-configuration 'awsvpcConfiguration={subnets=["${SUBNET_ID}"],securityGroups=["${SECURITY_GROUP}"],assignPublicIp="ENABLED"}' \
+                      --overrides '{
+                        "containerOverrides": [{
+                          "name": "${CONTAINER_NAME}",
+                          "command": [ix-sandbox, 0, --sender, notify@ixcloudsecurity.com, --recipients, alert@ixcloudsecurity.com, --test]
+                        }]
+                      }'
+                    """
                 }
             }
         }

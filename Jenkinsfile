@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // Flag for if changes have been made to api_key_rotation.py
-        CHANGES_FOUND = false
+        CHANGES_FOUND = true
         // ECR repository details
         ECR_REGISTRY = '026090555438.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPO_NAME = 'credential-manager/key-rotation'
@@ -106,6 +106,9 @@ pipeline {
         }
 
         stage('Test Docker Image as ECS Task') {
+            when {
+                expression { env.CHANGES_FOUND == true }
+            }
             steps {
                 script {
                     sh """

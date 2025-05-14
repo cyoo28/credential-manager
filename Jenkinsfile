@@ -1,4 +1,4 @@
-REGION// Flag for if changes have been made to source code
+// Flag for if changes have been made to source code
 def changesFound = false
 
 pipeline {

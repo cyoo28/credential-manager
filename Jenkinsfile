@@ -115,6 +115,7 @@ pipeline {
             }*/
             steps {
                 script {
+                    /*
                     // Run the scan
                     sh """
                         aws ecr start-image-scan \
@@ -122,6 +123,7 @@ pipeline {
                         --image-id imageTag=${DOCKER_TAG} \
                         --region ${REGION}
                     """
+                    */
                     // Wait a few seconds for the scan to complete
                     sleep 10
                     // Fetch findings

@@ -1,17 +1,19 @@
-// Flag for if changes have been made to api_key_rotation.py
+REGION// Flag for if changes have been made to source code
 def changesFound = false
 
 pipeline {
     agent any
 
     environment {
+        // Source Code
+        CODE = 'api_key_rotation.py'
         // ECR repository details
         ECR_REGISTRY = '026090555438.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPO = 'credential-manager/key-rotation'
         DOCKER_IMAGE = "${ECR_REGISTRY}/${ECR_REPO}"
         DOCKER_TAG = 'latest'
         // ECS cluster and task details
-        AWS_REGION = 'us-east-1'
+        REGION = 'us-east-1'
         CLUSTER_NAME = 'gcpKeyRotation-cluster'
         TASK_DEFINITION = 'gcpKeyRotation-task:1'
         SUBNET = 'subnet-020c7a0407b1103ba'
@@ -24,7 +26,6 @@ pipeline {
             steps {
                 // Check out the code from the repository
                 git branch: 'main', url: 'https://github.com/cyoo28/credential-manager.git'
-                //git 'https://github.com/cyoo28/credential-manager.git'
             }
         }
 
@@ -32,15 +33,17 @@ pipeline {
             steps {
                 script {
                     def changes = sh(
-                        script: 'git diff --name-only HEAD~1 HEAD | grep "^api_key_rotation.py\$" || true',
+                        // Check if there have been any changes made to source code
+                        script: 'git diff --name-only HEAD~1 HEAD | grep "^${CODE}\$" || true',
                         returnStdout: true
                     ).trim()
-                    // Check if there have been any changes made to api_key_rotation.py
+                    // set flag if there are changes
                     if (changes) {
-                        echo "Changes detected in api_key_rotation.py"
+                        echo "Changes detected in ${CODE}"
                         changesFound = true
+                    // otherwise skip the pipeline
                     } else {
-                        echo "No changes in api_key_rotation.py. Skipping pipeline."
+                        echo "No changes in ${CODE}. Skipping pipeline."
                         currentBuild.result = 'SUCCESS'
                         return 
                     }
@@ -106,15 +109,66 @@ pipeline {
             }
         }
 
+        stage('Scan Image for Vulnerabilities') {
+            /*when {
+                expression { return changesFound }
+            }*/
+            steps {
+                script {
+                    // Run the scan
+                    sh """
+                        aws ecr start-image-scan \
+                        --repository-name ${ECR_REPO} \
+                        --image-id imageTag=${DOCKER_TAG} \
+                        --region ${REGION}
+                    """
+                    // Wait a few seconds for the scan to complete
+                    sleep 10
+                    // Fetch findings
+                    def findings = sh(
+                        script: """
+                            aws ecr describe-image-scan-findings \
+                            --repository-name ${ECR_REPO} \
+                            --image-id imageTag=${DOCKER_TAG} \
+                            --region ${REGION} \
+                            --output json
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    echo "Scan findings:\n${findings}"
+                    // Parse only CRITICAL findings
+                    def criticalFindings = sh(
+                        script: """
+                            aws ecr describe-image-scan-findings \
+                            --repository-name ${ECR_REPO} \
+                            --image-id imageTag=${DOCKER_TAG} \
+                            --region ${REGION} \
+                            --query 'imageScanFindings.findings[?severity==\\`CRITICAL\\`]' \
+                            --output json
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    // Fail the pipeline if there are critical vulnerabilities
+                    if (criticalFindings != "[]") {
+                        error("CRITICAL vulnerabilities found! Failing the build.")
+                    // otherwise the image is fine
+                    } else {
+                        echo "No critical vulnerabilities found."
+                    }
+                }
+            }
+        }
+
         stage('Test Docker Image as ECS Task') {
             when {
                 expression { return changesFound }
             }
             steps {
                 script {
+                    // run the image as an ecs task
                     sh """
                     aws ecs run-task \
-                      --region ${AWS_REGION} \
+                      --region ${REGION} \
                       --cluster ${CLUSTER_NAME} \
                       --launch-type FARGATE \
                       --task-definition ${TASK_DEFINITION} \

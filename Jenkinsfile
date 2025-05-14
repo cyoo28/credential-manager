@@ -143,7 +143,7 @@ pipeline {
                             --repository-name ${ECR_REPO} \
                             --image-id imageTag=${DOCKER_TAG} \
                             --region ${REGION} \
-                            --query 'imageScanFindings.findings[?severity==\\`CRITICAL\\`]' \
+                            --query 'imageScanFindings.findings[?severity==\`CRITICAL\`]' \
                             --output json
                         """,
                         returnStdout: true

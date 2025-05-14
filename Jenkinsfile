@@ -112,6 +112,7 @@ pipeline {
         stage('Scan Image for Vulnerabilities') {
             when {
                 expression { return changesFound }
+            }
             steps {
                 script {
                     // Run the scan

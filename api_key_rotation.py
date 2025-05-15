@@ -493,14 +493,15 @@ def main(projectId, expiryTime, outputType, profileName=None, regionName="us-eas
             # Send email notification through SES
             send_email(sesClient, sender, recipients, genSubject, genBody)
         # send individual email notifications to key owners
-        for rotatedSecret in sMan.rotatedSecrets:
-            annotations = sMan.list_annotations(rotatedSecret["secretName"])
-            notify = annotations.get("notification")
-            if notify:
-                indSubject = "Your Key has been Rotated"
-                indBody = json.dumps(rotatedSecret, indent=2)
-                # Send email notification through SES
-                send_email(sesClient, sender, [notify], indSubject, indBody)
+        if not test:
+            for rotatedSecret in sMan.rotatedSecrets:
+                annotations = sMan.list_annotations(rotatedSecret["secretName"])
+                notify = annotations.get("notification")
+                if notify:
+                    indSubject = "Your Key has been Rotated"
+                    indBody = json.dumps(rotatedSecret, indent=2)
+                    # Send email notification through SES
+                    send_email(sesClient, sender, [notify], indSubject, indBody)
 
 if __name__ == "__main__":
     # Create an ArgumentParser object

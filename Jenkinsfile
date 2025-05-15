@@ -123,39 +123,27 @@ pipeline {
                         --region ${REGION}
                     """
                     // Wait for the scan to complete
-                    def waitForEcrScan() {
-                    timeout(time: 0.5, unit: 'MINUTES') {
-                        waitUntil {
-                            def scanStatus = sh(
-                                script: """
-                                    aws ecr describe-image-scan-findings \
-                                    --repository-name ${ECR_REPO} \
-                                    --image-id imageTag=${DOCKER_TAG} \
-                                    --region ${REGION} \
-                                    --query "imageScanStatus.status" \
-                                    --output text
-                                """,
-                                returnStdout: true
-                            ).trim()
+                    def waitForScan = {
+                        timeout(time: 30, unit: 'SECONDS') {
+                            waitUntil {
+                                def scanStatus = sh(
+                                    script: """
+                                        aws ecr describe-image-scan-findings \
+                                        --repository-name ${ECR_REPO} \
+                                        --image-id imageTag=${DOCKER_TAG} \
+                                        --region ${REGION} \
+                                        --query "imageScanStatus.status" \
+                                        --output text
+                                    """,
+                                    returnStdout: true
+                                ).trim()
 
-                            echo "ECR Scan Status: ${scanStatus}"
-                            return (scanStatus == 'COMPLETE')
+                                echo "ECR Scan Status: ${scanStatus}"
+                                return (scanStatus == 'COMPLETE')
                             }
                         }
                     }
-                    waitForEcrScan()                    
-                    // Fetch findings
-                    def findings = sh(
-                        script: """
-                            aws ecr describe-image-scan-findings \
-                            --repository-name ${ECR_REPO} \
-                            --image-id imageTag=${DOCKER_TAG} \
-                            --region ${REGION} \
-                            --output json
-                        """,
-                        returnStdout: true
-                    ).trim()
-                    echo "Scan findings:\n${findings}"
+                    waitForScan()
                     // Parse only CRITICAL findings
                     def criticalFindings = sh(
                         script: """
